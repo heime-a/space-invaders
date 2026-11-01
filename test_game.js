@@ -289,25 +289,25 @@ function testCrkdAtomKeychainControllerSupport() {
     mockGamepad.buttons[9].pressed = false;
     vm.runInContext('player.cooldown = 0; pollGamepad()', context);
 
-    // 2. D-Pad Right (button 15) moves player right
+    // 2. With controllerInvertX = true (default for CRKD ATOM orientation), raw button 14 moves right & button 15 moves left
     const startX = vm.runInContext('player.x', context);
-    mockGamepad.buttons[15].pressed = true;
+    mockGamepad.buttons[14].pressed = true;
     vm.runInContext('update()', context);
-    assert(vm.runInContext('player.x', context) > startX, 'CRKD ATOM D-Pad Right (button 15) should move laser base right');
-    mockGamepad.buttons[15].pressed = false;
+    assert(vm.runInContext('player.x', context) > startX, 'CRKD ATOM inverted D-Pad should move laser base right');
+    mockGamepad.buttons[14].pressed = false;
 
-    // 3. Left-Stick Remap mode (axes[0] = -1) moves player left
+    // 3. Left-Stick Remap mode (axes[0] = 1.0) moves player left when controllerInvertX = true
     const midX = vm.runInContext('player.x', context);
-    mockGamepad.axes[0] = -1.0;
+    mockGamepad.axes[0] = 1.0;
     vm.runInContext('update()', context);
-    assert(vm.runInContext('player.x', context) < midX, 'CRKD ATOM Left-Stick axis remap (axes[0] = -1) should move laser base left');
+    assert(vm.runInContext('player.x', context) < midX, 'CRKD ATOM inverted stick axis should move laser base left');
     mockGamepad.axes[0] = 0;
 
-    // 4. DirectInput / Switch POV Hat switch on axes[9] (0.714 = Left, -0.428 = Right)
+    // 4. DirectInput / Switch POV Hat switch on axes[9]
     const beforeHatX = vm.runInContext('player.x', context);
-    mockGamepad.axes[9] = -0.428; // Hat Right
+    mockGamepad.axes[9] = 0.714;
     vm.runInContext('update()', context);
-    assert(vm.runInContext('player.x', context) > beforeHatX, 'CRKD ATOM POV Hat Right (axes[9] = -0.428) should move laser base right');
+    assert(vm.runInContext('player.x', context) > beforeHatX, 'CRKD ATOM inverted POV Hat should move laser base right');
     mockGamepad.axes[9] = 1.2857;
 
     // 5. Face button B/A (button 0) fires laser

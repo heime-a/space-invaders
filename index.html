@@ -1049,8 +1049,12 @@
                 }
                 if (this.invulnerable > 0) this.invulnerable--;
 
-                const moveLeft = keys['ArrowLeft'] || keys['KeyA'] || keys['KeyJ'] || keys['Numpad4'] || touchState.left || gamepadState.left;
-                const moveRight = keys['ArrowRight'] || keys['KeyD'] || keys['KeyL'] || keys['Numpad6'] || touchState.right || gamepadState.right;
+                const keyLeft = controllerInvertX ? (keys['ArrowRight'] || keys['KeyD'] || keys['KeyL'] || keys['Numpad6'])
+                                                  : (keys['ArrowLeft'] || keys['KeyA'] || keys['KeyJ'] || keys['Numpad4']);
+                const keyRight = controllerInvertX ? (keys['ArrowLeft'] || keys['KeyA'] || keys['KeyJ'] || keys['Numpad4'])
+                                                   : (keys['ArrowRight'] || keys['KeyD'] || keys['KeyL'] || keys['Numpad6']);
+                const moveLeft = keyLeft || touchState.left || gamepadState.left;
+                const moveRight = keyRight || touchState.right || gamepadState.right;
                 const firePressed = keys['Space'] || keys['Enter'] || keys['NumpadEnter'] || keys['KeyZ'] || keys['KeyX'] || keys['KeyK'] ||
                                     keys['ControlLeft'] || keys['ControlRight'] || keys['ShiftLeft'] || keys['ShiftRight'] ||
                                     touchState.fire || gamepadState.fire;
@@ -1658,6 +1662,8 @@
         const keys = {};
         const touchState = { left: false, right: false, fire: false };
         const gamepadState = { left: false, right: false, fire: false, connected: false, name: '' };
+        // Invert CRKD ATOM / controller horizontal direction by default so Left/Right match physical orientation
+        let controllerInvertX = true;
         let prevGamepadStartPressed = false;
 
         // Normalize keyboard + Android Gamepad / CRKD ATOM Keyboard-mode key events
@@ -1788,6 +1794,12 @@
                 gamepadState.connected = false;
                 gamepadState.name = '';
                 updateGamepadStatusUI(false);
+            }
+
+            if (controllerInvertX) {
+                const tmp = left;
+                left = right;
+                right = tmp;
             }
 
             gamepadState.left = left;
