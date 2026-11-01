@@ -302,6 +302,7 @@
                     <div style="color:var(--arcade-green);">/M\   = 10 POINTS</div>
                 </div>
                 <button id="start-btn">INSERT COIN / START</button>
+                <div id="gamepad-status" style="margin-top:12px; font-size:clamp(0.68rem, 1.6vmin, 0.82rem); color:#c77dff; letter-spacing:1.5px; opacity:0.85;">🎮 CRKD ATOM / GAMEPAD: PRESS ANY BUTTON</div>
                 <button id="install-btn" style="display:none; margin-top:12px; background:none; border:2px solid var(--arcade-yellow); color:var(--arcade-yellow); padding:8px 20px; font-size:0.9rem; font-family:inherit; cursor:pointer;">INSTALL APP</button>
             </div>
         </div>
@@ -1048,12 +1049,18 @@
                 }
                 if (this.invulnerable > 0) this.invulnerable--;
 
-                if (keys['ArrowLeft'] || keys['KeyA'] || touchState.left) this.x -= 2.0;
-                if (keys['ArrowRight'] || keys['KeyD'] || touchState.right) this.x += 2.0;
+                const moveLeft = keys['ArrowLeft'] || keys['KeyA'] || keys['KeyJ'] || keys['Numpad4'] || touchState.left || gamepadState.left;
+                const moveRight = keys['ArrowRight'] || keys['KeyD'] || keys['KeyL'] || keys['Numpad6'] || touchState.right || gamepadState.right;
+                const firePressed = keys['Space'] || keys['Enter'] || keys['NumpadEnter'] || keys['KeyZ'] || keys['KeyX'] || keys['KeyK'] ||
+                                    keys['ControlLeft'] || keys['ControlRight'] || keys['ShiftLeft'] || keys['ShiftRight'] ||
+                                    touchState.fire || gamepadState.fire;
+
+                if (moveLeft) this.x -= 2.0;
+                if (moveRight) this.x += 2.0;
                 this.x = Math.max(28, Math.min(WIDTH - 28, this.x));
 
                 // Authentic 1978 Space Invaders rule: only 1 player laser shot on screen at a time!
-                if ((keys['Space'] || touchState.fire) && this.cooldown <= 0 && bullets.length < 1) {
+                if (firePressed && this.cooldown <= 0 && bullets.length < 1) {
                     bullets.push({ x: this.x, y: this.y - 12 });
                     shotCount++;
                     playPlayerShootSound();
@@ -1265,6 +1272,7 @@
         }
 
         function update() {
+            pollGamepad();
             if (!gameActive) return;
             frame++;
             if (stageBannerTimer > 0) stageBannerTimer--;
@@ -1630,6 +1638,7 @@
         let lastTime = 0, accumulator = 0;
 
         function loop(timestamp) {
+            pollGamepad();
             if (typeof timestamp === 'number') {
                 if (!lastTime) lastTime = timestamp;
                 const delta = Math.min(timestamp - lastTime, 100);
@@ -1647,10 +1656,176 @@
         }
 
         const keys = {};
-        window.onkeydown = e => keys[e.code] = true;
-        window.onkeyup = e => keys[e.code] = false;
-
         const touchState = { left: false, right: false, fire: false };
+        const gamepadState = { left: false, right: false, fire: false, connected: false, name: '' };
+        let prevGamepadStartPressed = false;
+
+        // Normalize keyboard + Android Gamepad / CRKD ATOM Keyboard-mode key events
+        function resolveKeyCodes(e) {
+            const codes = [];
+            if (e && e.code) codes.push(e.code);
+            const k = e && e.key;
+            const kc = e && e.keyCode;
+            if (k === 'ArrowLeft' || kc === 21 || kc === 37) codes.push('ArrowLeft');
+            if (k === 'ArrowRight' || kc === 22 || kc === 39) codes.push('ArrowRight');
+            if (k === ' ' || k === 'Enter' ||
+                kc === 23 || // KEYCODE_DPAD_CENTER
+                kc === 66 || // KEYCODE_ENTER
+                kc === 96 || // KEYCODE_BUTTON_A
+                kc === 97 || // KEYCODE_BUTTON_B
+                kc === 99 || // KEYCODE_BUTTON_X
+                kc === 100 || // KEYCODE_BUTTON_Y
+                kc === 102 || // KEYCODE_BUTTON_L1
+                kc === 103 || // KEYCODE_BUTTON_R1
+                kc === 104 || // KEYCODE_BUTTON_L2
+                kc === 105 || // KEYCODE_BUTTON_R2
+                kc === 108) { // KEYCODE_BUTTON_START
+                codes.push('Space');
+            }
+            return codes;
+        }
+
+        window.onkeydown = e => {
+            ensureAudio();
+            const matched = resolveKeyCodes(e);
+            matched.forEach(c => { keys[c] = true; });
+            if (!gameActive && (matched.includes('Space') || matched.includes('Enter') || (e && e.keyCode === 108))) {
+                if (e && e.preventDefault) e.preventDefault();
+                startGame();
+            }
+        };
+        window.onkeyup = e => {
+            const matched = resolveKeyCodes(e);
+            matched.forEach(c => { keys[c] = false; });
+        };
+
+        // Full W3C Gamepad API polling for CRKD ATOM Collectible Keychain Controller
+        // Supports Android Mode (Cyan), X-Input Mode (Orange), Switch Mode (White), and Stick-Remap modes
+        function isBtnPressed(btn) {
+            if (!btn) return false;
+            if (typeof btn === 'object') return Boolean(btn.pressed || (btn.value && btn.value > 0.35));
+            return Boolean(btn);
+        }
+
+        function updateGamepadStatusUI(connected, idStr = '') {
+            const statusEl = document.getElementById('gamepad-status');
+            if (!statusEl) return;
+            if (connected) {
+                const isCrkd = /crkd|atom|pro controller|xbox|gamepad|wireless controller/i.test(idStr);
+                const label = isCrkd ? '🎮 CRKD ATOM CONTROLLER CONNECTED' : `🎮 CONTROLLER READY (${idStr.slice(0, 22)})`;
+                statusEl.innerText = label;
+                statusEl.style.color = '#00ff44';
+            } else {
+                statusEl.innerText = '🎮 CRKD ATOM / GAMEPAD: PRESS ANY BUTTON';
+                statusEl.style.color = '#c77dff';
+            }
+        }
+
+        function pollGamepad() {
+            if (typeof navigator === 'undefined' || !navigator.getGamepads) return;
+            let pads;
+            try {
+                pads = navigator.getGamepads();
+            } catch (e) {
+                return;
+            }
+            if (!pads) return;
+
+            let left = false, right = false, fire = false, startBtn = false;
+            let foundPad = null;
+
+            for (let i = 0; i < pads.length; i++) {
+                const gp = pads[i];
+                if (!gp || gp.connected === false) continue;
+                foundPad = gp;
+                const btns = gp.buttons || [];
+                const axes = gp.axes || [];
+
+                // 1. D-Pad Left / Right (Standard buttons 14 = Left, 15 = Right)
+                if (isBtnPressed(btns[14])) left = true;
+                if (isBtnPressed(btns[15])) right = true;
+
+                // 2. Analog Axes / CRKD ATOM D-Pad-to-Stick modes:
+                //    axes[0] = Left Stick X, axes[2] = Right Stick X, axes[4] / axes[6] = Android D-Input D-Pad X
+                const horizAxes = [axes[0], axes[2], axes[4], axes[6]];
+                for (let ai = 0; ai < horizAxes.length; ai++) {
+                    const val = horizAxes[ai];
+                    if (typeof val === 'number' && !Number.isNaN(val)) {
+                        if (val < -0.3) left = true;
+                        if (val > 0.3) right = true;
+                    }
+                }
+
+                // 3. DirectInput / Switch Mode 8-way POV Hat Switch on axes[9] (Android Chrome HID mapping)
+                if (axes.length >= 10 && typeof axes[9] === 'number') {
+                    const hat = axes[9];
+                    // Centered hat is typically > 1.1 (e.g., 1.2857 or 3.2857) or 0.0
+                    // Right: Up-Right (-0.714), Right (-0.428), Down-Right (-0.142)
+                    // Left: Down-Left (0.428), Left (0.714), Up-Left (1.0)
+                    if (hat >= -0.80 && hat <= -0.05) right = true;
+                    if (hat >= 0.35 && hat <= 1.05) left = true;
+                }
+
+                // 4. Fire buttons: CRKD ATOM B/A/Y/X face buttons (0, 1, 2, 3) + L/R shoulder buttons (4, 5, 6, 7)
+                if (isBtnPressed(btns[0]) || isBtnPressed(btns[1]) ||
+                    isBtnPressed(btns[2]) || isBtnPressed(btns[3]) ||
+                    isBtnPressed(btns[4]) || isBtnPressed(btns[5]) ||
+                    isBtnPressed(btns[6]) || isBtnPressed(btns[7])) {
+                    fire = true;
+                }
+
+                // 5. Start (+), Select (-), CRKD Home (8, 9, 16) or any face button starts game from menu
+                if (isBtnPressed(btns[8]) || isBtnPressed(btns[9]) || isBtnPressed(btns[16]) || fire) {
+                    startBtn = true;
+                }
+            }
+
+            if (foundPad && !gamepadState.connected) {
+                gamepadState.connected = true;
+                gamepadState.name = foundPad.id || 'CRKD ATOM';
+                updateGamepadStatusUI(true, gamepadState.name);
+            } else if (!foundPad && gamepadState.connected) {
+                gamepadState.connected = false;
+                gamepadState.name = '';
+                updateGamepadStatusUI(false);
+            }
+
+            gamepadState.left = left;
+            gamepadState.right = right;
+            gamepadState.fire = fire;
+
+            // Reflect physical controller input on the corner HUD indicators if visible
+            const lEl = document.getElementById('l-btn');
+            const rEl = document.getElementById('r-btn');
+            const fEl = document.getElementById('f-btn');
+            if (lEl && lEl.classList && !touchState.left) lEl.classList.toggle('active', left);
+            if (rEl && rEl.classList && !touchState.right) rEl.classList.toggle('active', right);
+            if (fEl && fEl.classList && !touchState.fire) fEl.classList.toggle('active', fire);
+
+            // Edge-triggered start from menu overlay when pressing Start / Select / B / A / Y / X on CRKD ATOM
+            if (startBtn && !prevGamepadStartPressed && !gameActive) {
+                ensureAudio();
+                startGame();
+                // Prevent the button press that started the game from firing immediately on frame 1
+                if (player) player.cooldown = 14;
+            }
+            prevGamepadStartPressed = startBtn;
+        }
+
+        if (typeof window !== 'undefined' && window.addEventListener) {
+            window.addEventListener('gamepadconnected', e => {
+                const gp = e && e.gamepad;
+                gamepadState.connected = true;
+                gamepadState.name = (gp && gp.id) || 'CRKD ATOM';
+                updateGamepadStatusUI(true, gamepadState.name);
+            });
+            window.addEventListener('gamepaddisconnected', () => {
+                gamepadState.connected = false;
+                gamepadState.name = '';
+                updateGamepadStatusUI(false);
+            });
+        }
+
         function ensureAudio() {
             try {
                 if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1715,7 +1890,8 @@
             dpadGroup.ontouchcancel = handleDpadTouch;
         }
 
-        document.getElementById('start-btn').onclick = () => {
+        function startGame() {
+            ensureAudio();
             score = 0;
             level = 1;
             lives = 3;
@@ -1743,7 +1919,9 @@
             const btnEl = document.getElementById('start-btn');
             if (btnEl) btnEl.innerText = 'INSERT COIN / START';
             document.getElementById('menu-overlay').style.display = 'none';
-        };
+        }
+
+        document.getElementById('start-btn').onclick = startGame;
 
         let deferredInstallPrompt = null;
         if (typeof window !== 'undefined' && window.addEventListener) {

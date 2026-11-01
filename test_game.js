@@ -268,6 +268,55 @@ function testAuthenticDiscreteAnalogSoundPassAndRippleMarch() {
     console.log('PASS: Authentic 1978 discrete analog sound pass & 1-alien-per-frame ripple march verified.');
 }
 
+function testCrkdAtomKeychainControllerSupport() {
+    console.log('Testing: CRKD ATOM Collectible Keychain Controller support (D-Pad, Stick-remap, Hat-switch, Fire & Start)...');
+    const { context, elements } = setupEnvironment();
+
+    let mockGamepad = {
+        id: 'CRKD ATOM Collectible Keychain Controller',
+        connected: true,
+        buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })),
+        axes: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1.2857] // Neutral 10-axis gamepad
+    };
+    context.navigator = {
+        getGamepads: () => [mockGamepad]
+    };
+
+    // 1. Press Start (+) button (button 9) while on menu -> should start the game!
+    mockGamepad.buttons[9].pressed = true;
+    vm.runInContext('pollGamepad()', context);
+    assert.strictEqual(vm.runInContext('gameActive', context), true, 'Pressing Start (+) on CRKD ATOM should start the game');
+    mockGamepad.buttons[9].pressed = false;
+    vm.runInContext('player.cooldown = 0; pollGamepad()', context);
+
+    // 2. D-Pad Right (button 15) moves player right
+    const startX = vm.runInContext('player.x', context);
+    mockGamepad.buttons[15].pressed = true;
+    vm.runInContext('update()', context);
+    assert(vm.runInContext('player.x', context) > startX, 'CRKD ATOM D-Pad Right (button 15) should move laser base right');
+    mockGamepad.buttons[15].pressed = false;
+
+    // 3. Left-Stick Remap mode (axes[0] = -1) moves player left
+    const midX = vm.runInContext('player.x', context);
+    mockGamepad.axes[0] = -1.0;
+    vm.runInContext('update()', context);
+    assert(vm.runInContext('player.x', context) < midX, 'CRKD ATOM Left-Stick axis remap (axes[0] = -1) should move laser base left');
+    mockGamepad.axes[0] = 0;
+
+    // 4. DirectInput / Switch POV Hat switch on axes[9] (0.714 = Left, -0.428 = Right)
+    const beforeHatX = vm.runInContext('player.x', context);
+    mockGamepad.axes[9] = -0.428; // Hat Right
+    vm.runInContext('update()', context);
+    assert(vm.runInContext('player.x', context) > beforeHatX, 'CRKD ATOM POV Hat Right (axes[9] = -0.428) should move laser base right');
+    mockGamepad.axes[9] = 1.2857;
+
+    // 5. Face button B/A (button 0) fires laser
+    mockGamepad.buttons[0].pressed = true;
+    vm.runInContext('update()', context);
+    assert.strictEqual(vm.runInContext('bullets.length', context), 1, 'CRKD ATOM face button 0 should fire player laser');
+    console.log('PASS: CRKD ATOM Collectible Keychain Controller verified across all modes.');
+}
+
 try {
     testAuthentic55InvaderRackAndScoring();
     testDeterministic23rdShot300PointUFO();
@@ -275,6 +324,7 @@ try {
     testDynamicMarchSpeedAndExtraLifeAt1500();
     testEnemyBulletAndInvasionGameOver();
     testAuthenticDiscreteAnalogSoundPassAndRippleMarch();
+    testCrkdAtomKeychainControllerSupport();
     console.log('\nAll Space Invaders tests passed successfully!');
 } catch (e) {
     console.error('\nTest failed:', e.message);
