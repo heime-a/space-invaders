@@ -538,64 +538,357 @@
         SPRITES.bee = SPRITES.octopus;
 
         let audioCtx = null;
-        const MARCH_NOTES = [92.50, 82.41, 73.42, 65.41]; // F2, Eb2, D2, C2 authentic 4-note bass heartbeat
+        let noiseBuffer = null;
+        // Authentic 1978 LM556 / 4-resistor divider bass frequencies (F2, Eb2, D2, C2)
+        const MARCH_NOTES = [92.50, 82.41, 73.42, 65.41];
         let marchNoteIdx = 0;
+        let soundCallLog = [];
+
+        function getAudioCtx() {
+            if (!audioCtx) {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                if (Ctx) audioCtx = new Ctx();
+            }
+            if (audioCtx && audioCtx.state === 'suspended' && audioCtx.resume) {
+                audioCtx.resume();
+            }
+            return audioCtx;
+        }
+
+        // Pre-generate CD4006 18-stage shift-register PRBS white noise buffer for explosions & laser shot
+        function getNoiseBuffer(ctx) {
+            if (noiseBuffer || !ctx || !ctx.createBuffer) return noiseBuffer;
+            const sampleRate = ctx.sampleRate || 44100;
+            const length = sampleRate * 1.2;
+            noiseBuffer = ctx.createBuffer(1, length, sampleRate);
+            const data = noiseBuffer.getChannelData(0);
+            let lfsr = 0x1ffff;
+            for (let i = 0; i < length; i++) {
+                // 18-bit LFSR tap matching digital noise generator characteristics
+                const bit = ((lfsr >> 0) ^ (lfsr >> 7)) & 1;
+                lfsr = (lfsr >> 1) | (bit << 17);
+                data[i] = (bit ? 1.0 : -1.0) * (0.75 + Math.random() * 0.25);
+            }
+            return noiseBuffer;
+        }
 
         function playSfx(freq, type = 'square', duration = 0.1, endFreq = 10, gainLevel = 0.06) {
             try {
-                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
+                const ctx = getAudioCtx();
+                if (!ctx) return;
+                const now = ctx.currentTime || 0;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
                 osc.type = type;
-                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(Math.max(10, endFreq), audioCtx.currentTime + duration);
-                gain.gain.setValueAtTime(gainLevel, audioCtx.currentTime);
-                gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                osc.start();
-                osc.stop(audioCtx.currentTime + duration);
+                osc.frequency.setValueAtTime(freq, now);
+                osc.frequency.exponentialRampToValueAtTime(Math.max(10, endFreq), now + duration);
+                gain.gain.setValueAtTime(gainLevel, now);
+                gain.gain.linearRampToValueAtTime(0, now + duration);
+
+                if (ctx.createBiquadFilter) {
+                    const filter = ctx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.setValueAtTime(Math.max(320, freq * 3.5), now);
+                    osc.connect(filter);
+                    filter.connect(gain);
+                } else {
+                    osc.connect(gain);
+                }
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + duration);
             } catch (e) {}
         }
 
+        // Port 5 Bits 0..3: LM556 4-note bass heartbeat ("thump-thump-thump-thump")
         function playMarchStepSound() {
             const freq = MARCH_NOTES[marchNoteIdx % 4];
             marchNoteIdx = (marchNoteIdx + 1) % 4;
-            playSfx(freq, 'sawtooth', 0.075, freq * 0.88, 0.07);
-        }
-
-        function playInvaderKilledSound() {
-            playSfx(880, 'square', 0.14, 110, 0.065);
-        }
-
-        function playPlayerShootSound() {
-            playSfx(1350, 'square', 0.09, 260, 0.055);
-        }
-
-        function playUfoWarble() {
-            playSfx(620, 'triangle', 0.08, 440, 0.04);
-        }
-
-        function playExtraLifeFanfare() {
+            soundCallLog.push({ type: 'march', freq });
+            if (soundCallLog.length > 64) soundCallLog.shift();
             try {
-                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const ctx = getAudioCtx();
+                if (!ctx) return;
+                const now = ctx.currentTime || 0;
+                const dur = 0.085;
+                const osc = ctx.createOscillator();
+                const subOsc = ctx.createOscillator();
+                const gain = ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(freq, now);
+                osc.frequency.exponentialRampToValueAtTime(freq * 0.78, now + dur);
+
+                subOsc.type = 'square';
+                subOsc.frequency.setValueAtTime(freq * 0.5, now);
+                subOsc.frequency.exponentialRampToValueAtTime(freq * 0.42, now + dur);
+
+                gain.gain.setValueAtTime(0.11, now);
+                gain.gain.exponentialRampToValueAtTime ?
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + dur) :
+                    gain.gain.linearRampToValueAtTime(0, now + dur);
+
+                if (ctx.createBiquadFilter) {
+                    const lp = ctx.createBiquadFilter();
+                    lp.type = 'lowpass';
+                    lp.frequency.setValueAtTime(210, now);
+                    lp.Q.setValueAtTime(2.2, now);
+                    osc.connect(lp);
+                    subOsc.connect(lp);
+                    lp.connect(gain);
+                } else {
+                    osc.connect(gain);
+                    subOsc.connect(gain);
+                }
+                gain.connect(ctx.destination);
+                osc.start(now);
+                subOsc.start(now);
+                osc.stop(now + dur);
+                subOsc.stop(now + dur);
+            } catch (e) {}
+        }
+
+        // Port 3 Bit 3: LM3900 FM-modulated descending warble when an invader is killed ("BWO-O-O-W!")
+        function playInvaderKilledSound() {
+            soundCallLog.push({ type: 'invader_killed' });
+            if (soundCallLog.length > 64) soundCallLog.shift();
+            try {
+                const ctx = getAudioCtx();
+                if (!ctx) return;
+                const now = ctx.currentTime || 0;
+                const dur = 0.24;
+                const carrier = ctx.createOscillator();
+                const modOsc = ctx.createOscillator();
+                const modGain = ctx.createGain();
+                const outGain = ctx.createGain();
+
+                carrier.type = 'square';
+                // Stepped / exponential sweep from 1040 Hz down to 150 Hz
+                carrier.frequency.setValueAtTime(1040, now);
+                carrier.frequency.exponentialRampToValueAtTime(480, now + dur * 0.45);
+                carrier.frequency.exponentialRampToValueAtTime(150, now + dur);
+
+                // ~38 Hz LM3900 pitch modulation gives the iconic 1978 warbling alien death chirp
+                modOsc.type = 'triangle';
+                modOsc.frequency.setValueAtTime(38, now);
+                modGain.gain.setValueAtTime(175, now);
+                modGain.gain.linearRampToValueAtTime(45, now + dur);
+
+                outGain.gain.setValueAtTime(0.075, now);
+                outGain.gain.linearRampToValueAtTime(0, now + dur);
+
+                if (carrier.frequency && typeof carrier.frequency === 'object') {
+                    try {
+                        modOsc.connect(modGain);
+                        modGain.connect(carrier.frequency);
+                    } catch (_) {}
+                }
+                carrier.connect(outGain);
+                outGain.connect(ctx.destination);
+                carrier.start(now);
+                modOsc.start(now);
+                carrier.stop(now + dur);
+                modOsc.stop(now + dur);
+            } catch (e) {}
+        }
+
+        // Port 3 Bit 1: LM3900 high-pitched chirp + PRBS white-noise burst ("ZSSH-PEW!")
+        function playPlayerShootSound() {
+            soundCallLog.push({ type: 'player_shoot' });
+            if (soundCallLog.length > 64) soundCallLog.shift();
+            try {
+                const ctx = getAudioCtx();
+                if (!ctx) return;
+                const now = ctx.currentTime || 0;
+                const dur = 0.16;
+
+                // 1. Resonant downward oscillator sweep (2400 Hz -> 290 Hz)
+                const osc = ctx.createOscillator();
+                const oscGain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(2400, now);
+                osc.frequency.exponentialRampToValueAtTime(680, now + 0.055);
+                osc.frequency.exponentialRampToValueAtTime(290, now + dur);
+                oscGain.gain.setValueAtTime(0.065, now);
+                oscGain.gain.linearRampToValueAtTime(0, now + dur);
+                osc.connect(oscGain);
+                oscGain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + dur);
+
+                // 2. Bandpass-filtered shift-register white noise hiss
+                const buf = getNoiseBuffer(ctx);
+                if (buf && ctx.createBufferSource) {
+                    const noise = ctx.createBufferSource();
+                    noise.buffer = buf;
+                    const nGain = ctx.createGain();
+                    nGain.gain.setValueAtTime(0.075, now);
+                    nGain.gain.linearRampToValueAtTime(0, now + dur);
+                    if (ctx.createBiquadFilter) {
+                        const bp = ctx.createBiquadFilter();
+                        bp.type = 'bandpass';
+                        bp.frequency.setValueAtTime(1950, now);
+                        bp.frequency.exponentialRampToValueAtTime(750, now + dur);
+                        bp.Q.setValueAtTime(3.0, now);
+                        noise.connect(bp);
+                        bp.connect(nGain);
+                    } else {
+                        noise.connect(nGain);
+                    }
+                    nGain.connect(ctx.destination);
+                    noise.start(now);
+                    noise.stop(now + dur);
+                }
+            } catch (e) {}
+        }
+
+        // Port 3 Bit 2: Base Hit / Player Explosion (PRBS white noise + low-pass rumble crunch)
+        function playPlayerExplosionSound() {
+            soundCallLog.push({ type: 'player_explosion' });
+            if (soundCallLog.length > 64) soundCallLog.shift();
+            try {
+                const ctx = getAudioCtx();
+                if (!ctx) return;
+                const now = ctx.currentTime || 0;
+                const dur = 0.82;
+
+                // Low-frequency gritty sawtooth rumble
+                const osc = ctx.createOscillator();
+                const mod = ctx.createOscillator();
+                const modGain = ctx.createGain();
+                const oscGain = ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(125, now);
+                osc.frequency.exponentialRampToValueAtTime(26, now + dur);
+                mod.type = 'square';
+                mod.frequency.setValueAtTime(28, now);
+                modGain.gain.setValueAtTime(42, now);
+                oscGain.gain.setValueAtTime(0.09, now);
+                oscGain.gain.linearRampToValueAtTime(0, now + dur);
+                try {
+                    mod.connect(modGain);
+                    modGain.connect(osc.frequency);
+                } catch (_) {}
+                osc.connect(oscGain);
+                oscGain.connect(ctx.destination);
+                osc.start(now);
+                mod.start(now);
+                osc.stop(now + dur);
+                mod.stop(now + dur);
+
+                // Heavy low-pass filtered PRBS white noise burst
+                const buf = getNoiseBuffer(ctx);
+                if (buf && ctx.createBufferSource) {
+                    const noise = ctx.createBufferSource();
+                    noise.buffer = buf;
+                    const nGain = ctx.createGain();
+                    nGain.gain.setValueAtTime(0.14, now);
+                    nGain.gain.linearRampToValueAtTime(0, now + dur);
+                    if (ctx.createBiquadFilter) {
+                        const lp = ctx.createBiquadFilter();
+                        lp.type = 'lowpass';
+                        lp.frequency.setValueAtTime(520, now);
+                        lp.frequency.exponentialRampToValueAtTime(95, now + dur);
+                        lp.Q.setValueAtTime(2.5, now);
+                        noise.connect(lp);
+                        lp.connect(nGain);
+                    } else {
+                        noise.connect(nGain);
+                    }
+                    nGain.connect(ctx.destination);
+                    noise.start(now);
+                    noise.stop(now + dur);
+                }
+            } catch (e) {}
+        }
+
+        // Port 3 Bit 0: SN76477 Complex Sound Generator UFO warble (SLF triangle LFO modulating VCO)
+        function playUfoWarble() {
+            soundCallLog.push({ type: 'ufo_warble' });
+            if (soundCallLog.length > 64) soundCallLog.shift();
+            try {
+                const ctx = getAudioCtx();
+                if (!ctx) return;
+                const now = ctx.currentTime || 0;
+                const dur = 0.14;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'triangle';
+                // SN76477 two-way pitch sweep (440 Hz -> 780 Hz -> 440 Hz)
+                osc.frequency.setValueAtTime(440, now);
+                osc.frequency.exponentialRampToValueAtTime(780, now + dur * 0.5);
+                osc.frequency.exponentialRampToValueAtTime(440, now + dur);
+                gain.gain.setValueAtTime(0.055, now);
+                gain.gain.linearRampToValueAtTime(0.035, now + dur);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + dur);
+            } catch (e) {}
+        }
+
+        // Port 5 Bit 4: UFO Hit warbling descending explosion sound
+        function playUfoExplosionSound() {
+            soundCallLog.push({ type: 'ufo_explosion' });
+            if (soundCallLog.length > 64) soundCallLog.shift();
+            try {
+                const ctx = getAudioCtx();
+                if (!ctx) return;
+                const now = ctx.currentTime || 0;
+                const dur = 0.52;
+                const osc = ctx.createOscillator();
+                const lfo = ctx.createOscillator();
+                const lfoGain = ctx.createGain();
+                const gain = ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(720, now);
+                osc.frequency.exponentialRampToValueAtTime(115, now + dur);
+
+                lfo.type = 'sine';
+                lfo.frequency.setValueAtTime(18, now);
+                lfoGain.gain.setValueAtTime(130, now);
+
+                gain.gain.setValueAtTime(0.085, now);
+                gain.gain.linearRampToValueAtTime(0, now + dur);
+
+                try {
+                    lfo.connect(lfoGain);
+                    lfoGain.connect(osc.frequency);
+                } catch (_) {}
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                lfo.start(now);
+                osc.stop(now + dur);
+                lfo.stop(now + dur);
+            } catch (e) {}
+        }
+
+        // Port 3 Bit 4: Extra Laser Base repeating metallic chime pulse
+        function playExtraLifeFanfare() {
+            soundCallLog.push({ type: 'extra_life' });
+            if (soundCallLog.length > 64) soundCallLog.shift();
+            try {
+                const ctx = getAudioCtx();
+                if (!ctx) return;
+                const now = ctx.currentTime || 0;
                 const notes = [
-                    [523.25, 0.00, 0.09], [659.25, 0.10, 0.09],
-                    [783.99, 0.20, 0.09], [1046.50, 0.30, 0.22]
+                    [1567.98, 0.00, 0.065], [2093.00, 0.075, 0.065],
+                    [1567.98, 0.15, 0.065], [2093.00, 0.225, 0.065],
+                    [1567.98, 0.30, 0.065], [2093.00, 0.375, 0.14]
                 ];
                 notes.forEach(([f, start, dur]) => {
-                    const osc = audioCtx.createOscillator();
-                    const gain = audioCtx.createGain();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
                     osc.type = 'square';
-                    osc.frequency.setValueAtTime(f, audioCtx.currentTime + start);
-                    gain.gain.setValueAtTime(0.05, audioCtx.currentTime + start);
-                    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + start + dur);
+                    osc.frequency.setValueAtTime(f, now + start);
+                    gain.gain.setValueAtTime(0.055, now + start);
+                    gain.gain.linearRampToValueAtTime(0, now + start + dur);
                     osc.connect(gain);
-                    gain.connect(audioCtx.destination);
-                    osc.start(audioCtx.currentTime + start);
-                    osc.stop(audioCtx.currentTime + start + dur);
+                    gain.connect(ctx.destination);
+                    osc.start(now + start);
+                    osc.stop(now + start + dur);
                 });
             } catch (e) {}
         }
@@ -609,11 +902,14 @@
         let ufo = null, ufoSpawnTimer = 600;
         let stageBannerTimer = 0, statusBannerText = '', statusBannerColor = '#00FF44', statusBannerTimer = 0;
 
-        // Formation march state
+        // Formation march & 1978 1-alien-per-frame ripple state
         let fleetDir = 1; // 1 = right, -1 = left
-        let fleetAnimFrame = 0; // 0 or 1 toggled every march step
-        let fleetStepTimer = 0;
-        let alienFreezeTimer = 0; // Brief 12-frame pause when an invader is killed (authentic 1978 CPU pause)
+        let fleetAnimFrame = 0; // 0 or 1 toggled every full rack sweep
+        let fleetStepTimer = 0; // Controls the 4-note analog bass heartbeat cadence
+        let rippleCursor = 0; // Current invader index being stepped this 60Hz frame
+        let fleetDropPass = false; // True when current ripple pass is dropping down 16px after hitting an edge
+        let edgeHitDuringPass = false; // Tracks whether any alien reached the boundary during the current ripple pass
+        let alienFreezeTimer = 0; // Brief 15-frame CPU pause when an invader is killed (authentic 1978 ROM behavior)
 
         function createExplosion(x, y, count = 16, spriteType = 'alien') {
             const bandColor = getCellophaneColor(y);
@@ -786,6 +1082,7 @@
                 this.row = row;
                 this.col = col;
                 this.hp = 1;
+                this.animFrame = 0; // Toggles individually when this alien steps during the 1-alien-per-frame ripple
                 this.state = 'formation';
                 this.points = (type === 'squid' || type === 'boss') ? 30 : ((type === 'crab' || type === 'butterfly') ? 20 : 10);
             }
@@ -794,13 +1091,14 @@
             }
             draw() {
                 const frames = SPRITES[this.type] || SPRITES.octopus;
-                const spr = frames[fleetAnimFrame % 2];
+                const frameIdx = (this.animFrame !== undefined ? this.animFrame : fleetAnimFrame) % 2;
+                const spr = frames[frameIdx];
                 drawSprite(spr, this.x, this.y);
             }
         }
 
         function getFleetStepDelay(aliveCount) {
-            // Authentic 1978 dynamic march speed curve: as aliens are destroyed, the fleet accelerates dramatically
+            // Authentic 1978 dynamic march sound tempo curve: as aliens are destroyed, the 4-note heartbeat accelerates
             if (aliveCount <= 1) return 1;
             if (aliveCount <= 2) return 2;
             if (aliveCount <= 3) return 3;
@@ -822,6 +1120,9 @@
             fleetDir = 1;
             fleetAnimFrame = 0;
             fleetStepTimer = 0;
+            rippleCursor = 0;
+            fleetDropPass = false;
+            edgeHitDuringPass = false;
             stageBannerTimer = 80;
 
             // Authentic Space Invaders rack drop: Waves 2..8 start progressively lower by 16px per wave
@@ -832,11 +1133,11 @@
             const rowSpacing = 28;
 
             // 5 rows x 11 columns = 55 Invaders
-            // Row 0: Squid (30 pts)
-            // Rows 1-2: Crab (20 pts)
-            // Rows 3-4: Octopus (10 pts)
+            // Stored in authentic 1978 Intel 8080 ripple update order:
+            // Bottom row (row 4) to Top row (row 0), Left column (col 0) to Right column (col 10)
+            // Row 0: Squid (30 pts), Rows 1-2: Crab (20 pts), Rows 3-4: Octopus (10 pts)
             const rowTypes = ['squid', 'crab', 'crab', 'octopus', 'octopus'];
-            for (let r = 0; r < 5; r++) {
+            for (let r = 4; r >= 0; r--) {
                 for (let c = 0; c < 11; c++) {
                     enemies.push(new Enemy(startX + c * colSpacing, startY + r * rowSpacing, rowTypes[r], r, c));
                 }
@@ -866,7 +1167,7 @@
             player.exploding = true;
             player.explodeTimer = 60;
             createExplosion(player.x, player.y, 28, 'player');
-            playSfx(110, 'sawtooth', 0.55, 18, 0.08);
+            playPlayerExplosionSound();
 
             if (invasionOverrun) {
                 lives = 0;
@@ -1032,7 +1333,7 @@
                     awardScore(ufoPts);
                     createExplosion(ufo.x, ufo.y, 20, 'ufo');
                     scorePopups.push({ x: ufo.x, y: ufo.y + 4, text: ufoPts.toString(), color: PALETTE.R, timer: 55 });
-                    playSfx(480, 'sawtooth', 0.35, 90, 0.08);
+                    playUfoExplosionSound();
                     ufo = null;
                     bullets.splice(i, 1);
                     continue;
@@ -1048,9 +1349,10 @@
                         if (e.hp <= 0) {
                             createExplosion(e.x, e.y, 14, 'alien');
                             const pts = e.points || (e.type === 'squid' ? 30 : (e.type === 'crab' ? 20 : 10));
+                            if (ei < rippleCursor) rippleCursor = Math.max(0, rippleCursor - 1);
                             enemies.splice(ei, 1);
                             awardScore(pts);
-                            alienFreezeTimer = 10; // Brief authentic CPU pause on alien death
+                            alienFreezeTimer = 15; // Authentic 1978 15-frame CPU pause on alien death
                             playInvaderKilledSound();
                         }
                         break;
@@ -1065,44 +1367,65 @@
                 }
             }
 
-            // Invader Fleet March & Player/Bunker Collisions
+            // Authentic 1978 Invader Fleet 1-Alien-Per-Frame Ripple March & 4-Note Bass Heartbeat
             if (enemies.length > 0 && (!player || !player.exploding) && alienFreezeTimer <= 0) {
+                // 1. 4-Note LM556 Analog Bass Heartbeat Timer
                 fleetStepTimer++;
                 const stepDelay = getFleetStepDelay(enemies.length);
                 if (fleetStepTimer >= stepDelay) {
                     fleetStepTimer = 0;
-                    fleetAnimFrame = (fleetAnimFrame + 1) % 2;
                     playMarchStepSound();
+                }
 
-                    // Classic last-alien speed boost ("fastest invader in the galaxy")
-                    const stepX = enemies.length === 1 ? (fleetDir > 0 ? 7 : -6) : (fleetDir * 4);
-                    let hitEdge = false;
-                    for (let ei = 0; ei < enemies.length; ei++) {
-                        const nextX = enemies[ei].x + stepX;
-                        if ((fleetDir > 0 && nextX >= WIDTH - 22) || (fleetDir < 0 && nextX <= 22)) {
-                            hitEdge = true;
-                            break;
-                        }
-                    }
-
-                    if (hitEdge) {
+                // 2. 1-Alien-Per-Frame Intel 8080 Ripple Step (bottom-to-top, left-to-right)
+                if (rippleCursor >= enemies.length) {
+                    rippleCursor = 0;
+                    fleetAnimFrame = (fleetAnimFrame + 1) % 2;
+                    if (fleetDropPass) {
+                        fleetDropPass = false;
+                        edgeHitDuringPass = false;
+                    } else if (edgeHitDuringPass) {
                         fleetDir *= -1;
-                        for (let ei = 0; ei < enemies.length; ei++) {
-                            enemies[ei].y += 16; // Drop 8 arcade pixels (16 screen px)
-                        }
+                        fleetDropPass = true;
+                        edgeHitDuringPass = false;
+                    }
+                }
+
+                const steppingEnemy = enemies[rippleCursor];
+                if (steppingEnemy) {
+                    // Classic last-alien speed asymmetry ("fastest invader in the galaxy": +6px right, -4px left)
+                    const stepX = enemies.length === 1 ? (fleetDir > 0 ? 6 : -4) : (fleetDir * 4);
+                    if (fleetDropPass) {
+                        steppingEnemy.y += 16; // Drop 8 arcade pixels (16 screen px)
+                        steppingEnemy.x += stepX;
                     } else {
-                        for (let ei = 0; ei < enemies.length; ei++) {
-                            enemies[ei].x += stepX;
-                        }
+                        steppingEnemy.x += stepX;
+                    }
+                    steppingEnemy.animFrame = ((steppingEnemy.animFrame || 0) + 1) % 2;
+
+                    if ((fleetDir > 0 && steppingEnemy.x >= WIDTH - 22) ||
+                        (fleetDir < 0 && steppingEnemy.x <= 22)) {
+                        edgeHitDuringPass = true;
                     }
 
                     // Invaders physically slice/erode any shield pixels they march through
-                    for (let ei = 0; ei < enemies.length; ei++) {
-                        const e = enemies[ei];
-                        if (e.y >= 368) {
-                            for (let bi = 0; bi < bunkers.length; bi++) {
-                                bunkers[bi].erodeBox(e.x - 12, e.y - 8, e.x + 12, e.y + 8);
-                            }
+                    if (steppingEnemy.y >= 368) {
+                        for (let bi = 0; bi < bunkers.length; bi++) {
+                            bunkers[bi].erodeBox(steppingEnemy.x - 12, steppingEnemy.y - 8, steppingEnemy.x + 12, steppingEnemy.y + 8);
+                        }
+                    }
+
+                    rippleCursor++;
+                    if (rippleCursor >= enemies.length) {
+                        rippleCursor = 0;
+                        fleetAnimFrame = (fleetAnimFrame + 1) % 2;
+                        if (fleetDropPass) {
+                            fleetDropPass = false;
+                            edgeHitDuringPass = false;
+                        } else if (edgeHitDuringPass) {
+                            fleetDir *= -1;
+                            fleetDropPass = true;
+                            edgeHitDuringPass = false;
                         }
                     }
                 }

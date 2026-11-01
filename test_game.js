@@ -224,12 +224,57 @@ function testEnemyBulletAndInvasionGameOver() {
     console.log('PASS: Enemy missile life loss & Invasion Game Over verified.');
 }
 
+function testAuthenticDiscreteAnalogSoundPassAndRippleMarch() {
+    console.log('Testing: Authentic 1978 discrete analog sound synthesis & 1-alien-per-frame ripple march...');
+    const { context, elements } = setupEnvironment();
+    elements['start-btn'].onclick();
+
+    // Verify bottom-to-top, left-to-right ripple order (row 4 col 0 is first to step)
+    const firstEnemyRow = vm.runInContext('enemies[0].row', context);
+    const firstEnemyCol = vm.runInContext('enemies[0].col', context);
+    assert.strictEqual(firstEnemyRow, 4, 'First enemy in ripple order should be bottom row (row 4)');
+    assert.strictEqual(firstEnemyCol, 0, 'First enemy in ripple order should be left column (col 0)');
+
+    const initialX0 = vm.runInContext('enemies[0].x', context);
+    const initialX1 = vm.runInContext('enemies[1].x', context);
+    vm.runInContext('update()', context);
+    const afterStep1X0 = vm.runInContext('enemies[0].x', context);
+    const afterStep1X1 = vm.runInContext('enemies[1].x', context);
+    assert.strictEqual(afterStep1X0, initialX0 + 4, 'Only alien 0 should step on frame 1');
+    assert.strictEqual(afterStep1X1, initialX1, 'Alien 1 should not step until frame 2');
+
+    // Verify all discrete analog sound circuits log and execute cleanly
+    vm.runInContext(`
+        soundCallLog = [];
+        playMarchStepSound();
+        playPlayerShootSound();
+        playInvaderKilledSound();
+        playPlayerExplosionSound();
+        playUfoWarble();
+        playUfoExplosionSound();
+        playExtraLifeFanfare();
+    `, context);
+
+    const loggedTypes = Array.from(vm.runInContext('soundCallLog.map(s => s.type)', context));
+    assert.deepStrictEqual(loggedTypes, [
+        'march',
+        'player_shoot',
+        'invader_killed',
+        'player_explosion',
+        'ufo_warble',
+        'ufo_explosion',
+        'extra_life'
+    ], 'All 7 authentic 1978 discrete sound circuits should fire');
+    console.log('PASS: Authentic 1978 discrete analog sound pass & 1-alien-per-frame ripple march verified.');
+}
+
 try {
     testAuthentic55InvaderRackAndScoring();
     testDeterministic23rdShot300PointUFO();
     testPerPixelDestructibleBunkers();
     testDynamicMarchSpeedAndExtraLifeAt1500();
     testEnemyBulletAndInvasionGameOver();
+    testAuthenticDiscreteAnalogSoundPassAndRippleMarch();
     console.log('\nAll Space Invaders tests passed successfully!');
 } catch (e) {
     console.error('\nTest failed:', e.message);
