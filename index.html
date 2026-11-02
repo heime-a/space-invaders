@@ -286,7 +286,11 @@
         <div id="game-container">
             <div id="ui-layer">
                 <div><div class="white-text">SCORE&lt;1&gt;</div><div id="score-display" class="white-text">0000</div></div>
-                <div><div class="white-text">HI-SCORE</div><div id="high-score" class="white-text">1500</div></div>
+                <div>
+                    <div class="white-text">HI-SCORE</div>
+                    <div id="high-score" class="white-text">1500</div>
+                    <button id="flip-lr-btn" style="pointer-events:auto; margin-top:2px; background:rgba(199,125,255,0.18); border:1px solid #c77dff; color:#c77dff; font-family:inherit; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:4px; cursor:pointer;">⇄ L/R: FLIPPED</button>
+                </div>
                 <div><div class="white-text">LIVES</div><div id="lives-display" class="green-text">3</div></div>
             </div>
             <canvas id="gameCanvas"></canvas>
@@ -1662,9 +1666,55 @@
         const keys = {};
         const touchState = { left: false, right: false, fire: false };
         const gamepadState = { left: false, right: false, fire: false, connected: false, name: '' };
-        // Invert CRKD ATOM / controller horizontal direction by default so Left/Right match physical orientation
+        // Invert CRKD ATOM / controller horizontal direction by default; user can toggle anytime via [⇄ L/R] or Select (-)
         let controllerInvertX = true;
+        try {
+            if (typeof localStorage !== 'undefined' && localStorage.getItem('si_invert_lr') !== null) {
+                controllerInvertX = localStorage.getItem('si_invert_lr') === '1';
+            }
+        } catch (e) {}
         let prevGamepadStartPressed = false;
+        let prevGamepadSelectPressed = false;
+        let lastTelemetrySig = '';
+
+        function sendInputTelemetry(tag, data) {
+            try {
+                const sig = tag + ':' + JSON.stringify(data);
+                if (sig === lastTelemetrySig) return;
+                lastTelemetrySig = sig;
+                if (typeof fetch === 'function') {
+                    fetch('/telemetry?t=' + encodeURIComponent(sig), { cache: 'no-store' }).catch(() => {});
+                }
+            } catch (e) {}
+        }
+
+        function syncFlipButtonUI() {
+            const btn = document.getElementById('flip-lr-btn');
+            if (btn) {
+                btn.innerText = controllerInvertX ? '⇄ L/R: FLIPPED' : '⇄ L/R: NORMAL';
+                btn.style.borderColor = controllerInvertX ? '#00ff44' : '#c77dff';
+                btn.style.color = controllerInvertX ? '#00ff44' : '#c77dff';
+            }
+            const statusEl = document.getElementById('gamepad-status');
+            if (statusEl && gamepadState.connected) {
+                statusEl.innerText = `🎮 CRKD ATOM READY (${controllerInvertX ? 'L/R FLIPPED' : 'L/R NORMAL'} - TAP TO SWAP)`;
+            }
+        }
+
+        function toggleInvertLR() {
+            controllerInvertX = !controllerInvertX;
+            try {
+                if (typeof localStorage !== 'undefined') {
+                    localStorage.setItem('si_invert_lr', controllerInvertX ? '1' : '0');
+                }
+            } catch (e) {}
+            syncFlipButtonUI();
+            statusBannerText = controllerInvertX ? 'L/R DIRECTION: FLIPPED' : 'L/R DIRECTION: NORMAL';
+            statusBannerColor = '#C77DFF';
+            statusBannerTimer = 75;
+            playSfx(controllerInvertX ? 880 : 660, 'square', 0.07, 440, 0.05);
+            sendInputTelemetry('toggle_invert', { controllerInvertX });
+        }
 
         // Normalize keyboard + Android Gamepad / CRKD ATOM Keyboard-mode key events
         function resolveKeyCodes(e) {
@@ -1695,6 +1745,7 @@
             ensureAudio();
             const matched = resolveKeyCodes(e);
             matched.forEach(c => { keys[c] = true; });
+            sendInputTelemetry('keydown', { code: e && e.code, key: e && e.key, keyCode: e && e.keyCode, matched, invert: controllerInvertX });
             if (!gameActive && (matched.includes('Space') || matched.includes('Enter') || (e && e.keyCode === 108))) {
                 if (e && e.preventDefault) e.preventDefault();
                 startGame();
@@ -1737,7 +1788,7 @@
             }
             if (!pads) return;
 
-            let left = false, right = false, fire = false, startBtn = false;
+            let left = false, right = false, fire = false, startBtn = false, selectBtn = false;
             let foundPad = null;
 
             for (let i = 0; i < pads.length; i++) {
@@ -1746,6 +1797,21 @@
                 foundPad = gp;
                 const btns = gp.buttons || [];
                 const axes = gp.axes || [];
+
+                const activeBtns = [];
+                for (let bi = 0; bi < btns.length; bi++) {
+                    if (isBtnPressed(btns[bi])) activeBtns.push(bi);
+                }
+                const activeAxes = [];
+                for (let ai = 0; ai < axes.length; ai++) {
+                    const v = axes[ai];
+                    if (typeof v === 'number' && Math.abs(v) > 0.25 && Math.abs(v - 1.2857) > 0.15 && Math.abs(v - 3.2857) > 0.15) {
+                        activeAxes.push(ai + ':' + v.toFixed(2));
+                    }
+                }
+                if (activeBtns.length > 0 || activeAxes.length > 0) {
+                    sendInputTelemetry('pad', { id: gp.id, btns: activeBtns, axes: activeAxes, invert: controllerInvertX });
+                }
 
                 // 1. D-Pad Left / Right (Standard buttons 14 = Left, 15 = Right)
                 if (isBtnPressed(btns[14])) left = true;
@@ -1780,16 +1846,28 @@
                     fire = true;
                 }
 
-                // 5. Start (+), Select (-), CRKD Home (8, 9, 16) or any face button starts game from menu
-                if (isBtnPressed(btns[8]) || isBtnPressed(btns[9]) || isBtnPressed(btns[16]) || fire) {
+                // Select (-) button (8) toggles L/R direction when in-game
+                if (isBtnPressed(btns[8])) {
+                    selectBtn = true;
+                }
+
+                // 5. Start (+), CRKD Home (9, 16) or any face button starts game from menu
+                if (isBtnPressed(btns[9]) || isBtnPressed(btns[16]) || fire) {
                     startBtn = true;
                 }
             }
+
+            if (selectBtn && !prevGamepadSelectPressed) {
+                toggleInvertLR();
+            }
+            prevGamepadSelectPressed = selectBtn;
 
             if (foundPad && !gamepadState.connected) {
                 gamepadState.connected = true;
                 gamepadState.name = foundPad.id || 'CRKD ATOM';
                 updateGamepadStatusUI(true, gamepadState.name);
+                syncFlipButtonUI();
+                sendInputTelemetry('pad_connected', { id: gamepadState.name });
             } else if (!foundPad && gamepadState.connected) {
                 gamepadState.connected = false;
                 gamepadState.name = '';
@@ -1955,13 +2033,33 @@
             };
         }
 
+        const flipBtnEl = document.getElementById('flip-lr-btn');
+        if (flipBtnEl) {
+            flipBtnEl.onclick = e => {
+                if (e && e.stopPropagation) e.stopPropagation();
+                ensureAudio();
+                toggleInvertLR();
+            };
+        }
+        const gpStatusEl = document.getElementById('gamepad-status');
+        if (gpStatusEl) {
+            gpStatusEl.style.cursor = 'pointer';
+            gpStatusEl.onclick = () => {
+                ensureAudio();
+                toggleInvertLR();
+            };
+        }
+
         window.onload = () => {
             canvas.width = WIDTH;
             canvas.height = HEIGHT;
+            syncFlipButtonUI();
             initBunkers();
             loop();
             if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-                navigator.serviceWorker.register('./sw.js').catch(() => {});
+                navigator.serviceWorker.register('./sw.js').then(reg => {
+                    if (reg && reg.update) reg.update();
+                }).catch(() => {});
             }
         };
     </script>

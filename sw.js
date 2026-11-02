@@ -1,4 +1,4 @@
-const CACHE_NAME = 'space-invaders-arcade-v4';
+const CACHE_NAME = 'space-invaders-arcade-v5';
 const ASSETS = [
   './',
   './index.html',
@@ -9,7 +9,9 @@ const ASSETS = [
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then(cache =>
+      Promise.all(ASSETS.map(url => fetch(url, { cache: 'no-store' }).then(res => cache.put(url, res))))
+    )
   );
   self.skipWaiting();
 });
@@ -25,7 +27,7 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-store' })
       .then(response => {
         const clone = response.clone();
         caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
