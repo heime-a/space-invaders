@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#080808">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Space Invaders">
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
@@ -307,7 +308,7 @@
                 </div>
                 <button id="start-btn">INSERT COIN / START</button>
                 <div id="gamepad-status" style="margin-top:12px; font-size:clamp(0.68rem, 1.6vmin, 0.82rem); color:#c77dff; letter-spacing:1.5px; opacity:0.85;">🎮 CRKD ATOM / GAMEPAD: PRESS ANY BUTTON</div>
-                <button id="install-btn" style="display:none; margin-top:12px; background:none; border:2px solid var(--arcade-yellow); color:var(--arcade-yellow); padding:8px 20px; font-size:0.9rem; font-family:inherit; cursor:pointer;">INSTALL APP</button>
+                <button id="install-btn" style="display:none; margin-top:12px; background:none; border:2px solid var(--arcade-yellow); color:var(--arcade-yellow); padding:8px 20px; font-size:0.9rem; font-family:inherit; cursor:pointer;">📲 INSTALL APP</button>
             </div>
         </div>
         <div id="controls-wrapper">
@@ -2021,6 +2022,11 @@
                 const installBtn = document.getElementById('install-btn');
                 if (installBtn && installBtn.style) installBtn.style.display = 'inline-block';
             });
+            window.addEventListener('appinstalled', () => {
+                deferredInstallPrompt = null;
+                const installBtn = document.getElementById('install-btn');
+                if (installBtn && installBtn.style) installBtn.style.display = 'none';
+            });
         }
         const installBtnEl = document.getElementById('install-btn');
         if (installBtnEl) {
@@ -2057,7 +2063,7 @@
             initBunkers();
             loop();
             if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-                navigator.serviceWorker.register('./sw.js').then(reg => {
+                navigator.serviceWorker.register('./sw.js', { scope: './' }).then(reg => {
                     if (reg && reg.update) reg.update();
                 }).catch(() => {});
             }

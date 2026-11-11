@@ -1,4 +1,5 @@
-const CACHE_NAME = 'space-invaders-arcade-v5';
+const CACHE_PREFIX = 'space-invaders-arcade-';
+const CACHE_NAME = `${CACHE_PREFIX}v6`;
 const ASSETS = [
   './',
   './index.html',
@@ -19,7 +20,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k.startsWith(CACHE_PREFIX) && k !== CACHE_NAME).map(k => caches.delete(k)))
     )
   );
   self.clients.claim();

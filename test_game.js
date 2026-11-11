@@ -317,16 +317,56 @@ function testCrkdAtomKeychainControllerSupport() {
     console.log('PASS: CRKD ATOM Collectible Keychain Controller verified across all modes.');
 }
 
-try {
-    testAuthentic55InvaderRackAndScoring();
-    testDeterministic23rdShot300PointUFO();
-    testPerPixelDestructibleBunkers();
-    testDynamicMarchSpeedAndExtraLifeAt1500();
-    testEnemyBulletAndInvasionGameOver();
-    testAuthenticDiscreteAnalogSoundPassAndRippleMarch();
-    testCrkdAtomKeychainControllerSupport();
-    console.log('\nAll Space Invaders tests passed successfully!');
-} catch (e) {
-    console.error('\nTest failed:', e.message);
-    process.exit(1);
+async function testSeparatePwaIsolation() {
+    console.log('Testing: Standalone PWA manifest, scoped Service Worker cache isolation, and storage key isolation...');
+    const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf-8');
+    assert(html.includes('<link rel="manifest" href="manifest.json">'), 'Space Invaders index.html must link manifest.json');
+    assert(html.includes('name="apple-mobile-web-app-title" content="Space Invaders"'), 'Space Invaders index.html must set apple-mobile-web-app-title');
+    assert(html.includes('id="install-btn"'), 'Space Invaders index.html must include install-btn');
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'manifest.json'), 'utf-8'));
+    assert.strictEqual(manifest.id, '/space-invaders/', 'Space Invaders manifest must have unique id "/space-invaders/"');
+    assert.strictEqual(manifest.display, 'standalone', 'Space Invaders manifest must use standalone display');
+    assert.strictEqual(manifest.scope, './', 'Space Invaders manifest must scope to ./');
+    assert(manifest.icons.some(i => i.purpose === 'any') && manifest.icons.some(i => i.purpose === 'maskable'), 'Space Invaders manifest must provide separate any and maskable icons');
+
+    // Verify sw.js activate handler only deletes space-invaders-arcade-* caches and never deletes galaga-arcade-* caches
+    const swCode = fs.readFileSync(path.join(__dirname, 'sw.js'), 'utf-8');
+    const deletedCaches = [];
+    let activateHandler = null;
+    const swSandbox = {
+        self: {
+            addEventListener: (type, fn) => { if (type === 'activate') activateHandler = fn; },
+            skipWaiting: () => {},
+            clients: { claim: () => {} }
+        },
+        caches: {
+            keys: () => Promise.resolve(['space-invaders-arcade-v5', 'space-invaders-arcade-v6', 'galaga-arcade-v4']),
+            delete: (k) => { deletedCaches.push(k); return Promise.resolve(true); }
+        },
+        Promise
+    };
+    vm.runInNewContext(swCode, swSandbox);
+    let waitPromise = null;
+    activateHandler({ waitUntil: p => { waitPromise = p; } });
+    await waitPromise;
+    assert.deepStrictEqual(deletedCaches, ['space-invaders-arcade-v5'], 'Space Invaders SW must only delete old space-invaders-arcade-* caches and preserve Galaga cache');
+    console.log('PASS: Space Invaders PWA manifest, SW cache isolation, and storage key isolation verified.');
 }
+
+(async () => {
+    try {
+        testAuthentic55InvaderRackAndScoring();
+        testDeterministic23rdShot300PointUFO();
+        testPerPixelDestructibleBunkers();
+        testDynamicMarchSpeedAndExtraLifeAt1500();
+        testEnemyBulletAndInvasionGameOver();
+        testAuthenticDiscreteAnalogSoundPassAndRippleMarch();
+        testCrkdAtomKeychainControllerSupport();
+        await testSeparatePwaIsolation();
+        console.log('\nAll Space Invaders tests passed successfully!');
+    } catch (e) {
+        console.error('\nTest failed:', e.message);
+        process.exit(1);
+    }
+})();
