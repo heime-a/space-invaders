@@ -354,6 +354,114 @@ async function testSeparatePwaIsolation() {
     console.log('PASS: Space Invaders PWA manifest, SW cache isolation, and storage key isolation verified.');
 }
 
+function test1978AuthenticityAuditFixes() {
+    console.log('Testing: 1978 ROM authenticity fixes (52->5 march audio, score reload rate, shot-vs-shot, eroded ground line, UFO band & bitmap HUD)...');
+    const { context, elements } = setupEnvironment();
+    elements['start-btn'].onclick();
+
+    // 1. March bass audio delay follows ROM 0x1A11/0x1A21 (52 frames at 55 aliens -> 5 frames at 1 alien, never 1 frame buzz)
+    const soundDelays = vm.runInContext(`({
+        s55: getMarchSoundDelay(55),
+        s10: getMarchSoundDelay(10),
+        s2: getMarchSoundDelay(2),
+        s1: getMarchSoundDelay(1)
+    })`, context);
+    assert.strictEqual(soundDelays.s55, 52, 'Expected 52-frame march sound delay at 55 invaders');
+    assert.strictEqual(soundDelays.s10, 16, 'Expected 16-frame march sound delay at 10 invaders');
+    assert.strictEqual(soundDelays.s2, 7, 'Expected 7-frame march sound delay at 2 invaders');
+    assert.strictEqual(soundDelays.s1, 5, 'Expected 5-frame march sound delay at 1 invader');
+
+    // 2. Score-based ROM reload rate table (0x30, 0x10, 0x0B, 0x08, 0x07)
+    const reloadRates = vm.runInContext(`[
+        getAlienReloadRate(0),
+        getAlienReloadRate(500),
+        getAlienReloadRate(1500),
+        getAlienReloadRate(2500),
+        getAlienReloadRate(3500)
+    ]`, context);
+    assert.deepStrictEqual(Array.from(reloadRates), [48, 16, 11, 8, 7], 'Expected exact 1978 ROM score reload table');
+
+    // 3. Cellophane color bands: Top HUD white (<64), UFO red (64..127), playfield white (128..367), bunkers/ground green (>=368)
+    const bands = vm.runInContext(`({
+        hud: getCellophaneColor(20),
+        ufo: getCellophaneColor(84),
+        mid: getCellophaneColor(200),
+        bunker: getCellophaneColor(384)
+    })`, context);
+    assert.strictEqual(bands.hud, '#F0F0F0', 'Top HUD should be white');
+    assert.strictEqual(bands.ufo, '#FF2A2A', 'UFO band (64..127) should be red');
+    assert.strictEqual(bands.mid, '#F0F0F0', 'Main invader playfield should be white');
+    assert.strictEqual(bands.bunker, '#00FF44', 'Bunkers and lower rows should be green');
+
+    // 4. Swept shot-vs-shot mutual collision & player shot lock
+    vm.runInContext(`
+        bullets = [{ x: 180, y: 260 }];
+        enemyBullets = [{ x: 180, y: 256, type: 'plunger', slot: 1, steps: 5 }];
+        spriteExplosions = [];
+        update();
+    `, context);
+    assert.strictEqual(vm.runInContext('bullets.length', context), 0, 'Player shot should be destroyed in shot-vs-shot collision');
+    assert.strictEqual(vm.runInContext('enemyBullets.length', context), 0, 'Enemy missile should be destroyed in shot-vs-shot collision');
+    assert(vm.runInContext('player.shotLockTimer > 0', context), 'Player shot lock should engage briefly during shot splash');
+    assert(vm.runInContext('spriteExplosions.some(s => s.type === "shot")', context), 'Shot-vs-shot should spawn shot_explosion sprite');
+
+    // 5. Destructible bottom green ground line chips when enemy shot hits ground
+    const initialGround = vm.runInContext('groundLine.filter(Boolean).length', context);
+    assert.strictEqual(initialGround, 224, 'Ground line should start with 224 intact arcade pixels');
+    vm.runInContext(`
+        enemyBullets = [{ x: 200, y: 475, type: 'rolling', slot: 0, steps: 20 }];
+        update();
+    `, context);
+    const afterGround = vm.runInContext('groundLine.filter(Boolean).length', context);
+    assert(afterGround < initialGround, 'Enemy shot hitting bottom baseline should erode pixels from green ground line');
+
+    // 6. UFO spawns cleanly at y = 84 (below top HUD) and sequential popup has delay > 0
+    vm.runInContext(`
+        ufo = null;
+        ufoSpawnTimer = 1;
+        update();
+    `, context);
+    assert.strictEqual(vm.runInContext('ufo.y', context), 84, 'UFO should fly cleanly at y = 84 inside red cellophane band');
+    assert.strictEqual(vm.runInContext('ufo.speed', context), 2.0, 'UFO should move at exact 1 arcade px/frame (2.0 screen px)');
+
+    // 7. Wave clear pauses briefly and does NOT play extra-life fanfare
+    vm.runInContext(`
+        soundCallLog = [];
+        enemies = [];
+        waveClearTimer = 0;
+        update();
+    `, context);
+    assert(vm.runInContext('waveClearTimer > 0', context), 'Wave clear should trigger brief transition pause');
+    for (let f = 0; f < 50; f++) vm.runInContext('update()', context);
+    assert.strictEqual(vm.runInContext('level', context), 2, 'Wave should advance to level 2 after pause');
+    assert.strictEqual(vm.runInContext('enemies.length', context), 55, 'Wave 2 should spawn full 55-invader rack');
+    assert.strictEqual(vm.runInContext('groundLine.filter(Boolean).length', context), 224, 'Ground line should restore on Wave 2');
+    assert(!vm.runInContext('soundCallLog.some(s => s.type === "extra_life")', context), 'Wave clear should not play extra-life fanfare');
+
+    // 8. Bass sound fires in exact 1:1 lockstep with each full rack sweep (every 55 frames at 55 invaders)
+    //    and caps smoothly at 5 frames when 1 invader remains
+    const lockstepCounts = vm.runInContext(`(() => {
+        spawnWave();
+        soundCallLog = [];
+        for (let f = 0; f < 110; f++) update(); // Exactly 2 full 55-invader sweeps
+        const notes55 = soundCallLog.filter(s => s.type === 'march').length;
+
+        enemies = [enemies[0]];
+        rippleCursor = 0;
+        fleetStepTimer = 0;
+        soundCallLog = [];
+        for (let f = 0; f < 25; f++) update(); // 25 frames at 1 alien -> 5 notes (every 5 frames, not 25)
+        const notes1 = soundCallLog.filter(s => s.type === 'march').length;
+        return { notes55, notes1 };
+    })()`, context);
+    assert.strictEqual(lockstepCounts.notes55, 2, '55-invader rack should fire exactly 2 bass notes across 2 full 55-frame sweeps');
+    assert.strictEqual(lockstepCounts.notes1, 5, 'Single invader should cap bass heartbeat cleanly at 5-frame intervals');
+
+    // 9. Draw renders crisp bitmap HUD & all entities without errors
+    vm.runInContext('draw()', context);
+    console.log('PASS: All 1978 arcade ROM authenticity fixes verified.');
+}
+
 (async () => {
     try {
         testAuthentic55InvaderRackAndScoring();
@@ -363,6 +471,7 @@ async function testSeparatePwaIsolation() {
         testEnemyBulletAndInvasionGameOver();
         testAuthenticDiscreteAnalogSoundPassAndRippleMarch();
         testCrkdAtomKeychainControllerSupport();
+        test1978AuthenticityAuditFixes();
         await testSeparatePwaIsolation();
         console.log('\nAll Space Invaders tests passed successfully!');
     } catch (e) {

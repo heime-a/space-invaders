@@ -101,19 +101,15 @@
             image-rendering: pixelated;
         }
 
+        /* Hidden semantic DOM mirror for screen readers & tests; crisp 1978 pixel HUD renders directly on canvas */
         #ui-layer {
             position: absolute;
-            top: 6px;
-            width: 100%;
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            padding: 0 15px;
-            z-index: 30;
-            font-weight: bold;
-            font-size: clamp(13px, 2.4vmin, 20px);
-            text-align: center;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
             pointer-events: none;
-            letter-spacing: 1px;
         }
 
         .red-text { color: var(--arcade-red); }
@@ -135,10 +131,10 @@
 
         #score-table {
             margin-top: 16px;
-            padding: 10px 18px;
+            padding: 12px 20px;
             border: 1px solid rgba(255, 255, 255, 0.2);
-            background: rgba(10, 10, 10, 0.85);
-            font-size: clamp(0.78rem, 1.9vmin, 1rem);
+            background: rgba(10, 10, 10, 0.88);
+            font-size: clamp(0.78rem, 1.9vmin, 0.98rem);
             line-height: 1.7;
             letter-spacing: 2px;
             text-align: left;
@@ -148,9 +144,23 @@
             text-align: center;
             color: var(--arcade-white);
             border-bottom: 1px solid rgba(255, 255, 255, 0.25);
-            margin-bottom: 6px;
+            margin-bottom: 8px;
             padding-bottom: 4px;
             font-weight: bold;
+        }
+
+        .score-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 4px 0;
+        }
+
+        .score-icon {
+            width: 32px;
+            height: 16px;
+            image-rendering: pixelated;
+            flex-shrink: 0;
         }
 
         #start-btn {
@@ -285,14 +295,13 @@
 
     <div id="game-wrapper">
         <div id="game-container">
-            <div id="ui-layer">
+            <div id="ui-layer" aria-live="polite">
                 <div><div class="white-text">SCORE&lt;1&gt;</div><div id="score-display" class="white-text">0000</div></div>
                 <div>
                     <div class="white-text">HI-SCORE</div>
-                    <div id="high-score" class="white-text">1500</div>
-                    <button id="flip-lr-btn" style="pointer-events:auto; margin-top:2px; background:rgba(199,125,255,0.18); border:1px solid #c77dff; color:#c77dff; font-family:inherit; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:4px; cursor:pointer;">⇄ L/R: FLIPPED</button>
+                    <div id="high-score" class="white-text">0000</div>
                 </div>
-                <div><div class="white-text">LIVES</div><div id="lives-display" class="green-text">3</div></div>
+                <div><div class="white-text">SCORE&lt;2&gt;</div><div id="lives-display" class="green-text">3</div></div>
             </div>
             <canvas id="gameCanvas"></canvas>
             <div id="menu-overlay">
@@ -301,13 +310,14 @@
                 <p id="menu-sub" style="color:var(--arcade-red); letter-spacing:4px; margin:6px 0 0 0; font-size:clamp(0.75rem, 1.8vmin, 0.95rem);">1978 TAITO / MIDWAY ROM REPLICA</p>
                 <div id="score-table">
                     <div class="table-header">*SCORE ADVANCE TABLE*</div>
-                    <div style="color:var(--arcade-red);">[UFO] = ? MYSTERY</div>
-                    <div style="color:var(--arcade-white);">/O\   = 30 POINTS</div>
-                    <div style="color:var(--arcade-white);">\o/   = 20 POINTS</div>
-                    <div style="color:var(--arcade-green);">/M\   = 10 POINTS</div>
+                    <div class="score-row" style="color:var(--arcade-red);"><canvas class="score-icon" data-sprite="ufo" data-color="#FF2A2A" width="32" height="16"></canvas><span>=? MYSTERY</span></div>
+                    <div class="score-row" style="color:var(--arcade-white);"><canvas class="score-icon" data-sprite="squid" data-color="#F0F0F0" width="32" height="16"></canvas><span>=30 POINTS</span></div>
+                    <div class="score-row" style="color:var(--arcade-white);"><canvas class="score-icon" data-sprite="crab" data-color="#F0F0F0" width="32" height="16"></canvas><span>=20 POINTS</span></div>
+                    <div class="score-row" style="color:var(--arcade-green);"><canvas class="score-icon" data-sprite="octopus" data-color="#00FF44" width="32" height="16"></canvas><span>=10 POINTS</span></div>
                 </div>
                 <button id="start-btn">INSERT COIN / START</button>
                 <div id="gamepad-status" style="margin-top:12px; font-size:clamp(0.68rem, 1.6vmin, 0.82rem); color:#c77dff; letter-spacing:1.5px; opacity:0.85;">🎮 CRKD ATOM / GAMEPAD: PRESS ANY BUTTON</div>
+                <button id="flip-lr-btn" style="margin-top:8px; background:rgba(199,125,255,0.14); border:1px solid #c77dff; color:#c77dff; font-family:inherit; font-size:11px; font-weight:bold; padding:4px 10px; border-radius:4px; cursor:pointer; letter-spacing:1px;">⇄ L/R: FLIPPED</button>
                 <button id="install-btn" style="display:none; margin-top:12px; background:none; border:2px solid var(--arcade-yellow); color:var(--arcade-yellow); padding:8px 20px; font-size:0.9rem; font-family:inherit; cursor:pointer;">📲 INSTALL APP</button>
             </div>
         </div>
@@ -335,10 +345,11 @@
             '.': 'transparent'
         };
 
-        // Authentic Taito/Midway CRT cellophane overlay color based on vertical Y scanline
+        // Authentic Taito/Midway CRT cellophane overlay color based on vertical Y scanline (256p -> 512p @ 2x)
+        // Top HUD (0..63): White | UFO & ceiling band (64..127): Red | Main field (128..367): White | Bunkers/Player/Ground (368+): Green
         function getCellophaneColor(y) {
-            if (y < 84) return PALETTE.R;
-            if (y >= 364) return PALETTE.G;
+            if (y >= 64 && y < 128) return PALETTE.R;
+            if (y >= 368) return PALETTE.G;
             return PALETTE.W;
         }
 
@@ -349,6 +360,79 @@
         // Authentic 1978 ROM column firing tables (0-indexed columns 0..10)
         const PLUNGER_COL_TABLE = [0, 6, 0, 0, 0, 3, 10, 0, 5, 2, 0, 0, 10, 8, 1, 7];
         const SQUIGGLY_COL_TABLE = [10, 0, 5, 2, 0, 0, 10, 8, 1, 7, 1, 10, 3, 6, 9];
+
+        // Authentic 1978 ROM march bass sound delay tables (0x1A11 / 0x1A21): 52 frames down to 5 frames at 1 alien
+        const MARCH_SOUND_THRESHOLDS = [50, 43, 36, 28, 22, 17, 13, 10, 8, 7, 6, 5, 4, 3, 2, 1];
+        const MARCH_SOUND_DELAYS = [52, 46, 39, 34, 28, 24, 21, 19, 16, 14, 13, 12, 11, 10, 9, 7, 5];
+
+        // Authentic 1978 ROM wave starting Y offsets (0x1DA3 AlienStartTable, converted to 2x top-down screen px)
+        // Wave 1 = 0, Wave 2 = +48, Wave 3 = +80, Waves 4-6 = +96, Waves 7-9 = +112, then Wave 10 loops back to Wave 2
+        const WAVE_START_DROP_TABLE = [48, 80, 96, 96, 96, 112, 112, 112];
+
+        // Authentic 1978 7x10 crisp 1px-stroke Arcade Character ROM (proportional to 448x512 CRT, with slashed zero)
+        const ARCADE_FONT = {
+            '0': ["0111110","1000001","1000011","1000101","1001001","1010001","1100001","1000001","1000001","0111110"],
+            '1': ["0001000","0011000","0101000","0001000","0001000","0001000","0001000","0001000","0001000","0111110"],
+            '2': ["0111110","1000001","0000001","0000001","0000110","0011000","0100000","1000000","1000000","1111111"],
+            '3': ["0111110","1000001","0000001","0000001","0011110","0000001","0000001","0000001","1000001","0111110"],
+            '4': ["0000100","0001100","0010100","0100100","1000100","1000100","1111111","0000100","0000100","0000100"],
+            '5': ["1111111","1000000","1000000","1111110","0000001","0000001","0000001","0000001","1000001","0111110"],
+            '6': ["0011110","0100000","1000000","1000000","1111110","1000001","1000001","1000001","1000001","0111110"],
+            '7': ["1111111","0000001","0000010","0000100","0001000","0001000","0010000","0010000","0010000","0010000"],
+            '8': ["0111110","1000001","1000001","1000001","0111110","1000001","1000001","1000001","1000001","0111110"],
+            '9': ["0111110","1000001","1000001","1000001","0111111","0000001","0000001","0000010","0000100","0111000"],
+            'A': ["0011100","0100010","1000001","1000001","1000001","1111111","1000001","1000001","1000001","1000001"],
+            'B': ["1111110","1000001","1000001","1000001","1111110","1000001","1000001","1000001","1000001","1111110"],
+            'C': ["0111110","1000001","1000000","1000000","1000000","1000000","1000000","1000000","1000001","0111110"],
+            'D': ["1111100","1000010","1000001","1000001","1000001","1000001","1000001","1000001","1000010","1111100"],
+            'E': ["1111111","1000000","1000000","1000000","1111110","1000000","1000000","1000000","1000000","1111111"],
+            'F': ["1111111","1000000","1000000","1000000","1111110","1000000","1000000","1000000","1000000","1000000"],
+            'G': ["0111110","1000001","1000000","1000000","1000000","1001111","1000001","1000001","1000001","0111110"],
+            'H': ["1000001","1000001","1000001","1000001","1111111","1000001","1000001","1000001","1000001","1000001"],
+            'I': ["0111110","0001000","0001000","0001000","0001000","0001000","0001000","0001000","0001000","0111110"],
+            'L': ["1000000","1000000","1000000","1000000","1000000","1000000","1000000","1000000","1000000","1111111"],
+            'M': ["1000001","1100011","1010101","1001001","1000001","1000001","1000001","1000001","1000001","1000001"],
+            'N': ["1000001","1100001","1010001","1001001","1000101","1000011","1000001","1000001","1000001","1000001"],
+            'O': ["0111110","1000001","1000001","1000001","1000001","1000001","1000001","1000001","1000001","0111110"],
+            'P': ["1111110","1000001","1000001","1000001","1111110","1000000","1000000","1000000","1000000","1000000"],
+            'R': ["1111110","1000001","1000001","1000001","1111110","1001000","1000100","1000010","1000001","1000001"],
+            'S': ["0111110","1000001","1000000","1000000","0111110","0000001","0000001","0000001","1000001","0111110"],
+            'T': ["1111111","0001000","0001000","0001000","0001000","0001000","0001000","0001000","0001000","0001000"],
+            'U': ["1000001","1000001","1000001","1000001","1000001","1000001","1000001","1000001","1000001","0111110"],
+            'V': ["1000001","1000001","1000001","1000001","1000001","1000001","0100010","0100010","0010100","0001000"],
+            'W': ["1000001","1000001","1000001","1000001","1000001","1001001","1001001","1010101","1100011","1000001"],
+            'X': ["1000001","1000001","0100010","0010100","0001000","0001000","0010100","0100010","1000001","1000001"],
+            'Y': ["1000001","1000001","0100010","0010100","0001000","0001000","0001000","0001000","0001000","0001000"],
+            '<': ["0000100","0001000","0010000","0100000","1000000","0100000","0010000","0001000","0000100","0000000"],
+            '>': ["0010000","0001000","0000100","0000010","0000001","0000010","0000100","0001000","0010000","0000000"],
+            '-': ["0000000","0000000","0000000","0000000","0111110","0000000","0000000","0000000","0000000","0000000"],
+            '!': ["0001000","0001000","0001000","0001000","0001000","0001000","0001000","0000000","0001000","0001000"],
+            '/': ["0000001","0000010","0000010","0000100","0001000","0001000","0010000","0100000","0100000","1000000"],
+            ':': ["0000000","0000000","0001000","0001000","0000000","0000000","0001000","0001000","0000000","0000000"],
+            ' ': ["0000000","0000000","0000000","0000000","0000000","0000000","0000000","0000000","0000000","0000000"]
+        };
+
+        function drawArcadeText(text, x, y, color = PALETTE.W, scale = 1, align = 'left') {
+            const str = String(text).toUpperCase();
+            const charAdvance = 10 * scale; // 7px glyph + 3px spacing = 10px crisp arcade pitch
+            const totalW = str.length * charAdvance - 3 * scale;
+            let startX = x;
+            if (align === 'center') startX = Math.round(x - totalW / 2);
+            else if (align === 'right') startX = Math.round(x - totalW);
+            ctx.fillStyle = color;
+            for (let i = 0; i < str.length; i++) {
+                const glyph = ARCADE_FONT[str[i]] || ARCADE_FONT[' '];
+                const gx = startX + i * charAdvance;
+                for (let r = 0; r < glyph.length; r++) {
+                    const row = glyph[r];
+                    for (let c = 0; c < row.length; c++) {
+                        if (row[c] === '1') {
+                            ctx.fillRect(gx + c * scale, y + r * scale, scale, scale);
+                        }
+                    }
+                }
+            }
+        }
 
         // Pixel-perfect 1978 ROM bitmaps
         const SPRITES = {
@@ -545,8 +629,8 @@
 
         let audioCtx = null;
         let noiseBuffer = null;
-        // Authentic 1978 LM556 / 4-resistor divider bass frequencies (F2, Eb2, D2, C2)
-        const MARCH_NOTES = [92.50, 82.41, 73.42, 65.41];
+        // Authentic 1978 LM556 / 4-resistor divider descending bass frequencies (G2, F2, E2, D2)
+        const MARCH_NOTES = [98.00, 87.31, 82.41, 73.42];
         let marchNoteIdx = 0;
         let soundCallLog = [];
 
@@ -808,7 +892,7 @@
             } catch (e) {}
         }
 
-        // Port 3 Bit 0: SN76477 Complex Sound Generator UFO warble (SLF triangle LFO modulating VCO)
+        // Port 3 Bit 0: SN76477 Complex Sound Generator UFO warble (continuous SLF triangle LFO modulating VCO)
         function playUfoWarble() {
             soundCallLog.push({ type: 'ufo_warble' });
             if (soundCallLog.length > 64) soundCallLog.shift();
@@ -816,16 +900,18 @@
                 const ctx = getAudioCtx();
                 if (!ctx) return;
                 const now = ctx.currentTime || 0;
-                const dur = 0.14;
+                const dur = 0.16;
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.type = 'triangle';
-                // SN76477 two-way pitch sweep (440 Hz -> 780 Hz -> 440 Hz)
-                osc.frequency.setValueAtTime(440, now);
-                osc.frequency.exponentialRampToValueAtTime(780, now + dur * 0.5);
-                osc.frequency.exponentialRampToValueAtTime(440, now + dur);
-                gain.gain.setValueAtTime(0.055, now);
-                gain.gain.linearRampToValueAtTime(0.035, now + dur);
+                // SN76477 smooth two-way pitch sweep (430 Hz -> 760 Hz -> 430 Hz)
+                osc.frequency.setValueAtTime(430, now);
+                osc.frequency.exponentialRampToValueAtTime(760, now + dur * 0.5);
+                osc.frequency.exponentialRampToValueAtTime(430, now + dur);
+                gain.gain.setValueAtTime(0.01, now);
+                gain.gain.linearRampToValueAtTime(0.055, now + 0.02);
+                gain.gain.linearRampToValueAtTime(0.055, now + dur - 0.025);
+                gain.gain.linearRampToValueAtTime(0.005, now + dur);
                 osc.connect(gain);
                 gain.connect(ctx.destination);
                 osc.start(now);
@@ -899,49 +985,40 @@
             } catch (e) {}
         }
 
-        let gameActive = false, score = 0, level = 1, lives = 3, frame = 0, highScore = 1500;
+        let gameActive = false, score = 0, level = 1, lives = 3, frame = 0, highScore = 0;
         let bonusLifeAwarded = false;
         let shotCount = 0;
-        let plungerIdx = 0, squigglyIdx = 0, alienShotCooldown = 30;
+        let plungerIdx = 0, squigglyIdx = 0, alienShotCooldown = 24;
         let player = null, enemies = [], bullets = [], enemyBullets = [], particles = [];
         let spriteExplosions = [], scorePopups = [], bunkers = [];
-        let ufo = null, ufoSpawnTimer = 600;
+        let groundLine = [];
+        let ufo = null, ufoSpawnTimer = 1200;
         let stageBannerTimer = 0, statusBannerText = '', statusBannerColor = '#00FF44', statusBannerTimer = 0;
+        let waveClearTimer = 0;
 
         // Formation march & 1978 1-alien-per-frame ripple state
         let fleetDir = 1; // 1 = right, -1 = left
         let fleetAnimFrame = 0; // 0 or 1 toggled every full rack sweep
-        let fleetStepTimer = 0; // Controls the 4-note analog bass heartbeat cadence
+        let fleetStepTimer = 0; // Controls the 4-note analog bass heartbeat cadence (52 -> 5 frames)
         let rippleCursor = 0; // Current invader index being stepped this 60Hz frame
         let fleetDropPass = false; // True when current ripple pass is dropping down 16px after hitting an edge
         let edgeHitDuringPass = false; // Tracks whether any alien reached the boundary during the current ripple pass
         let alienFreezeTimer = 0; // Brief 15-frame CPU pause when an invader is killed (authentic 1978 ROM behavior)
+        let alienShotSlotCycle = 0; // Round-robin priority between rolling, plunger, squiggly
 
+        // Authentic 1978 pure pixel-art explosion sprites (no modern drifting particle spray)
         function createExplosion(x, y, count = 16, spriteType = 'alien') {
             const bandColor = getCellophaneColor(y);
-            for (let i = 0; i < count; i++) {
-                const ang = Math.random() * Math.PI * 2;
-                const spd = 0.7 + Math.random() * 2.6;
-                particles.push({
-                    x, y,
-                    vx: Math.cos(ang) * spd,
-                    vy: Math.sin(ang) * spd,
-                    life: 1.0,
-                    decay: 0.025 + Math.random() * 0.02,
-                    color: bandColor,
-                    size: 2
-                });
-            }
             spriteExplosions.push({
                 x, y,
                 type: spriteType,
                 color: spriteType === 'ufo' ? PALETTE.R : (spriteType === 'player' ? PALETTE.G : bandColor),
                 timer: 0,
-                maxTimer: spriteType === 'player' ? 48 : (spriteType === 'ufo' ? 24 : 14)
+                maxTimer: spriteType === 'player' ? 48 : (spriteType === 'ufo' ? 22 : (spriteType === 'shot' ? 12 : 14))
             });
         }
 
-        function drawSprite(data, x, y, overrideColor = null, scale = SCALE) {
+        function drawSprite(data, x, y, overrideColor = null, scale = SCALE, targetCtx = ctx) {
             const rows = data.length;
             const cols = data[0].length;
             const halfW = (cols * scale) / 2;
@@ -953,12 +1030,24 @@
                 for (let ci = 0; ci < cols; ci++) {
                     const ch = row[ci];
                     if (ch !== '.') {
-                        ctx.fillStyle = overrideColor || (ch === 'W' ? rowColor : (PALETTE[ch] || rowColor));
-                        ctx.fillRect(Math.round(x - halfW + ci * scale), py, scale, scale);
+                        targetCtx.fillStyle = overrideColor || (ch === 'W' ? rowColor : (PALETTE[ch] || rowColor));
+                        targetCtx.fillRect(Math.round(x - halfW + ci * scale), py, scale, scale);
                     }
                 }
             }
         }
+
+        // Authentic jagged 8x8 blast mask for carving destructible shields/bunkers (matches shot_explosion sprite)
+        const BUNKER_BLAST_MASK = [
+            "10010010",
+            "01011010",
+            "00111100",
+            "11111111",
+            "11111111",
+            "00111100",
+            "01011010",
+            "10010010"
+        ];
 
         class Bunker {
             constructor(x, y) {
@@ -985,15 +1074,45 @@
                 }
                 return false;
             }
-            // Blast a jagged crater around (px, py)
+            // Swept vertical segment check from (px, y0) to (px, y1) so fast shots never tunnel through thin shield pixels
+            checkSegmentHit(px, y0, y1, halfWidthPx = 1) {
+                if (px + halfWidthPx < this.x || px - halfWidthPx >= this.x + this.width) return null;
+                const minY = Math.min(y0, y1);
+                const maxY = Math.max(y0, y1);
+                if (maxY < this.y || minY >= this.y + this.height) return null;
+
+                const dir = y1 >= y0 ? 1 : -1;
+                const steps = Math.max(1, Math.ceil(Math.abs(y1 - y0) / SCALE));
+                const c0 = Math.max(0, Math.floor((px - halfWidthPx - this.x) / SCALE));
+                const c1 = Math.min(this.cols - 1, Math.floor((px + halfWidthPx - this.x) / SCALE));
+                for (let s = 0; s <= steps; s++) {
+                    const sy = y0 + (dir * s * Math.abs(y1 - y0)) / steps;
+                    const r = Math.floor((sy - this.y) / SCALE);
+                    if (r < 0 || r >= this.rows) continue;
+                    for (let c = c0; c <= c1; c++) {
+                        if (this.pixels[r][c]) {
+                            return { x: px, y: this.y + r * SCALE + SCALE * 0.5 };
+                        }
+                    }
+                }
+                return null;
+            }
+            // Stamp authentic jagged 1978 shot-explosion crater into bunker pixels around (px, py)
             erode(px, py, blastRadius = 3.2) {
-                const cCenter = (px - this.x) / SCALE;
-                const rCenter = (py - this.y) / SCALE;
-                for (let r = 0; r < this.rows; r++) {
-                    for (let c = 0; c < this.cols; c++) {
-                        if (!this.pixels[r][c]) continue;
-                        const dist = Math.hypot(c - cCenter, r - rCenter);
-                        if (dist <= blastRadius * 0.72 || (dist <= blastRadius && Math.random() < 0.68)) {
+                const cCenter = Math.floor((px - this.x) / SCALE);
+                const rCenter = Math.floor((py - this.y) / SCALE);
+                const maskRows = BUNKER_BLAST_MASK.length;
+                const maskCols = BUNKER_BLAST_MASK[0].length;
+                const halfR = Math.floor(maskRows / 2);
+                const halfC = Math.floor(maskCols / 2);
+                for (let mr = 0; mr < maskRows; mr++) {
+                    const r = rCenter - halfR + mr;
+                    if (r < 0 || r >= this.rows) continue;
+                    for (let mc = 0; mc < maskCols; mc++) {
+                        if (BUNKER_BLAST_MASK[mr][mc] !== '1') continue;
+                        const c = cCenter - halfC + mc;
+                        if (c < 0 || c >= this.cols) continue;
+                        if (blastRadius >= 3.0 || (Math.abs(mr - halfR) <= 2 && Math.abs(mc - halfC) <= 2)) {
                             this.pixels[r][c] = false;
                         }
                     }
@@ -1023,9 +1142,30 @@
             }
         }
 
+        function initGroundLine() {
+            groundLine = new Array(WIDTH / SCALE).fill(true);
+        }
+
+        // Authentic 1978 quirk: enemy shots exploding on the bottom baseline chip pixel notches out of the green line!
+        function erodeGroundLine(px) {
+            if (!groundLine || groundLine.length === 0) initGroundLine();
+            const center = Math.floor(px / SCALE);
+            // Jagged 4-5 arcade pixel crater matching bottom row of shot_explosion bitmap
+            const offsets = [-2, -1, 0, 1, 2];
+            for (let i = 0; i < offsets.length; i++) {
+                const idx = center + offsets[i];
+                if (idx >= 0 && idx < groundLine.length) {
+                    if (Math.abs(offsets[i]) <= 1 || i % 2 === 0) {
+                        groundLine[idx] = false;
+                    }
+                }
+            }
+        }
+
         function initBunkers() {
             bunkers = [];
-            // 4 evenly spaced bunkers across 448px playfield at y = 384
+            initGroundLine();
+            // 4 evenly spaced bunkers across 448px playfield at y = 384 (native arcade y = 192)
             const spacing = 92;
             const startX = 64;
             for (let i = 0; i < 4; i++) {
@@ -1036,8 +1176,9 @@
         class Player {
             constructor() {
                 this.x = 56; // Authentic Space Invaders left-side spawn position
-                this.y = 448;
+                this.y = 446;
                 this.cooldown = 0;
+                this.shotLockTimer = 0; // Locks next shot while previous shot's impact/ceiling splash is active
                 this.exploding = false;
                 this.explodeTimer = 0;
                 this.invulnerable = 0;
@@ -1048,11 +1189,12 @@
                     if (this.explodeTimer <= 0) {
                         this.exploding = false;
                         this.x = 56;
-                        this.invulnerable = 75;
+                        this.invulnerable = 45;
                     }
                     return;
                 }
                 if (this.invulnerable > 0) this.invulnerable--;
+                if (this.shotLockTimer > 0) this.shotLockTimer--;
 
                 const keyLeft = controllerInvertX ? (keys['ArrowRight'] || keys['KeyD'] || keys['KeyL'] || keys['Numpad6'])
                                                   : (keys['ArrowLeft'] || keys['KeyA'] || keys['KeyJ'] || keys['Numpad4']);
@@ -1064,16 +1206,16 @@
                                     keys['ControlLeft'] || keys['ControlRight'] || keys['ShiftLeft'] || keys['ShiftRight'] ||
                                     touchState.fire || gamepadState.fire;
 
+                // Authentic 1978 speed: 1 arcade pixel per frame = 2.0 screen px/frame
                 if (moveLeft) this.x -= 2.0;
                 if (moveRight) this.x += 2.0;
-                this.x = Math.max(28, Math.min(WIDTH - 28, this.x));
+                this.x = Math.max(30, Math.min(WIDTH - 30, this.x));
 
-                // Authentic 1978 Space Invaders rule: only 1 player laser shot on screen at a time!
-                if (firePressed && this.cooldown <= 0 && bullets.length < 1) {
-                    bullets.push({ x: this.x, y: this.y - 12 });
+                // Authentic 1978 rule: strictly 1 player laser shot on screen at a time (including brief splash state)
+                if (firePressed && this.cooldown <= 0 && this.shotLockTimer <= 0 && bullets.length < 1) {
+                    bullets.push({ x: this.x, y: this.y - 10 });
                     shotCount++;
                     playPlayerShootSound();
-                    this.cooldown = 12;
                 }
                 if (this.cooldown > 0) this.cooldown--;
             }
@@ -1101,6 +1243,7 @@
                 this.animFrame = 0; // Toggles individually when this alien steps during the 1-alien-per-frame ripple
                 this.state = 'formation';
                 this.points = (type === 'squid' || type === 'boss') ? 30 : ((type === 'crab' || type === 'butterfly') ? 20 : 10);
+                this.halfW = (type === 'squid' || type === 'boss') ? 9 : ((type === 'crab' || type === 'butterfly') ? 12 : 13);
             }
             update() {
                 // Individual enemy update hook for compatibility
@@ -1113,25 +1256,34 @@
             }
         }
 
+        // 1-alien-per-frame rack sweep period (55 frames at full rack -> 1 frame for the final lone alien)
         function getFleetStepDelay(aliveCount) {
-            // Authentic 1978 dynamic march sound tempo curve: as aliens are destroyed, the 4-note heartbeat accelerates
-            if (aliveCount <= 1) return 1;
-            if (aliveCount <= 2) return 2;
-            if (aliveCount <= 3) return 3;
-            if (aliveCount <= 5) return 5;
-            if (aliveCount <= 8) return 7;
-            if (aliveCount <= 12) return 10;
-            if (aliveCount <= 18) return 14;
-            if (aliveCount <= 26) return 20;
-            if (aliveCount <= 36) return 28;
-            if (aliveCount <= 45) return 36;
-            return 44;
+            return Math.max(1, aliveCount);
+        }
+
+        // Authentic 1978 ROM 0x1A11/0x1A21 4-note analog bass heartbeat delay (52 frames -> 5 frames, never 60Hz buzz!)
+        function getMarchSoundDelay(aliveCount) {
+            for (let i = 0; i < MARCH_SOUND_THRESHOLDS.length; i++) {
+                if (aliveCount > MARCH_SOUND_THRESHOLDS[i]) {
+                    return MARCH_SOUND_DELAYS[i];
+                }
+            }
+            return MARCH_SOUND_DELAYS[MARCH_SOUND_DELAYS.length - 1];
+        }
+
+        // Authentic 1978 ROM 0x1AA1/0x1CB8 score-based alien missile reload rate (in 3-frame shot steps)
+        function getAlienReloadRate(currentScore) {
+            if (currentScore < 300) return 48;
+            if (currentScore < 1100) return 16;
+            if (currentScore < 2100) return 11;
+            if (currentScore < 3100) return 8;
+            return 7;
         }
 
         function spawnWave() {
             enemies = [];
             ufo = null;
-            ufoSpawnTimer = 520;
+            ufoSpawnTimer = 1200; // ~20s initial saucer arrival; subsequent spawns use ROM 1536-frame (~25.6s) cadence
             shotCount = 0;
             fleetDir = 1;
             fleetAnimFrame = 0;
@@ -1139,14 +1291,16 @@
             rippleCursor = 0;
             fleetDropPass = false;
             edgeHitDuringPass = false;
-            stageBannerTimer = 80;
+            alienShotCooldown = 20;
+            alienShotSlotCycle = 0;
+            stageBannerTimer = level === 1 ? 75 : 0;
 
-            // Authentic Space Invaders rack drop: Waves 2..8 start progressively lower by 16px per wave
-            const rackDrop = ((level - 1) % 8) * 16;
-            const startY = 108 + Math.min(rackDrop, 96);
+            // Authentic 1978 ROM 0x1DA3 AlienStartTable rack drop progression
+            const rackDrop = level <= 1 ? 0 : WAVE_START_DROP_TABLE[(level - 2) % WAVE_START_DROP_TABLE.length];
+            const startY = 128 + rackDrop;
             const startX = 64;
-            const colSpacing = 32;
-            const rowSpacing = 28;
+            const colSpacing = 32; // Exact 16 arcade px
+            const rowSpacing = 32; // Exact 16 arcade px (8px sprite + 8px gap)
 
             // 5 rows x 11 columns = 55 Invaders
             // Stored in authentic 1978 Intel 8080 ripple update order:
@@ -1169,9 +1323,9 @@
                 lives++;
                 const livesEl = document.getElementById('lives-display');
                 if (livesEl) livesEl.innerText = lives;
-                statusBannerText = 'EXTRA LASER BASE!';
+                statusBannerText = 'EXTRA BASE';
                 statusBannerColor = PALETTE.G;
-                statusBannerTimer = 110;
+                statusBannerTimer = 95;
                 playExtraLifeFanfare();
             }
         }
@@ -1187,7 +1341,7 @@
 
             if (invasionOverrun) {
                 lives = 0;
-                statusBannerText = 'INVASION!';
+                statusBannerText = 'GAME OVER';
                 statusBannerColor = PALETTE.R;
                 statusBannerTimer = 120;
             } else {
@@ -1205,7 +1359,7 @@
                     const subEl = document.getElementById('menu-sub');
                     const btnEl = document.getElementById('start-btn');
                     if (titleEl) titleEl.innerText = 'GAME OVER';
-                    if (subEl) subEl.innerText = `SCORE: ${score.toString().padStart(4, '0')}`;
+                    if (subEl) subEl.innerText = `SCORE: ${(score % 10000).toString().padStart(4, '0')}`;
                     if (btnEl) btnEl.innerText = 'PLAY AGAIN';
                     document.getElementById('menu-overlay').style.display = 'flex';
                 }, 1200);
@@ -1226,14 +1380,28 @@
             const activeCols = Object.keys(lowestByCol).map(Number);
             if (activeCols.length === 0) return;
 
-            // Choose which of the 3 authentic shot types to fire
+            // Cycle through the 3 authentic shot slots (0: rolling, 1: plunger, 2: squiggly)
             const activeTypes = enemyBullets.map(b => b.type);
+            const order = ['rolling', 'plunger', 'squiggly'];
             let chosenType = null;
+            let chosenSlot = 0;
             let shooter = null;
 
-            if (!activeTypes.includes('rolling')) {
-                // Rolling shot always tracks the column closest to the player
-                chosenType = 'rolling';
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const idx = (alienShotSlotCycle + attempt) % 3;
+                const cand = order[idx];
+                if (activeTypes.includes(cand)) continue;
+                if (cand === 'plunger' && enemies.length <= 1) continue; // Authentic quirk: Plunger disabled on final alien
+                if (cand === 'squiggly' && ufo) continue; // Authentic quirk: Squiggly shares task slot with UFO
+                chosenType = cand;
+                chosenSlot = idx;
+                alienShotSlotCycle = (idx + 1) % 3;
+                break;
+            }
+            if (!chosenType) return;
+
+            if (chosenType === 'rolling') {
+                // Rolling shot always targets the column closest to the player
                 let bestCol = activeCols[0];
                 let bestDist = Infinity;
                 activeCols.forEach(c => {
@@ -1244,9 +1412,7 @@
                     }
                 });
                 shooter = lowestByCol[bestCol];
-            } else if (!activeTypes.includes('plunger') && enemies.length > 1) {
-                // Authentic quirk: Plunger shot is disabled when only 1 invader remains!
-                chosenType = 'plunger';
+            } else if (chosenType === 'plunger') {
                 for (let tries = 0; tries < PLUNGER_COL_TABLE.length; tries++) {
                     const col = PLUNGER_COL_TABLE[plungerIdx % PLUNGER_COL_TABLE.length];
                     plungerIdx++;
@@ -1255,9 +1421,7 @@
                         break;
                     }
                 }
-            } else if (!activeTypes.includes('squiggly') && !ufo) {
-                // Authentic quirk: Squiggly shot shares memory with the UFO and only fires when UFO is absent
-                chosenType = 'squiggly';
+            } else if (chosenType === 'squiggly') {
                 for (let tries = 0; tries < SQUIGGLY_COL_TABLE.length; tries++) {
                     const col = SQUIGGLY_COL_TABLE[squigglyIdx % SQUIGGLY_COL_TABLE.length];
                     squigglyIdx++;
@@ -1270,13 +1434,15 @@
 
             if (!shooter) {
                 shooter = lowestByCol[activeCols[Math.floor(Math.random() * activeCols.length)]];
-                chosenType = chosenType || 'rolling';
             }
 
             enemyBullets.push({
                 x: shooter.x,
                 y: shooter.y + 12,
-                type: chosenType
+                type: chosenType,
+                slot: chosenSlot,
+                steps: 0,
+                animFrame: 0
             });
         }
 
@@ -1288,78 +1454,112 @@
             if (statusBannerTimer > 0) statusBannerTimer--;
             if (alienFreezeTimer > 0) alienFreezeTimer--;
 
+            // Brief authentic pause between waves after clearing all 55 invaders
+            if (waveClearTimer > 0) {
+                waveClearTimer--;
+                for (let si = spriteExplosions.length - 1; si >= 0; si--) {
+                    spriteExplosions[si].timer++;
+                    if (spriteExplosions[si].timer >= spriteExplosions[si].maxTimer) {
+                        spriteExplosions.splice(si, 1);
+                    }
+                }
+                for (let spi = scorePopups.length - 1; spi >= 0; spi--) {
+                    if (scorePopups[spi].delay > 0) scorePopups[spi].delay--;
+                    scorePopups[spi].timer--;
+                    if (scorePopups[spi].timer <= 0) scorePopups.splice(spi, 1);
+                }
+                if (waveClearTimer <= 0) {
+                    level++;
+                    bullets = [];
+                    enemyBullets = [];
+                    initBunkers();
+                    spawnWave();
+                }
+                return;
+            }
+
             if (player) player.update();
 
             // Mystery Ship (UFO) spawn & update (only spawns when >= 8 invaders remain, authentic ROM rule)
             if (!ufo) {
-                if (enemies.length >= 8) {
+                if (enemies.length >= 8 && (!player || !player.exploding)) {
                     ufoSpawnTimer--;
                     if (ufoSpawnTimer <= 0) {
                         // Direction depends on shotCount parity (authentic ROM rule)
                         const dir = (shotCount % 2 === 0) ? 1 : -1;
                         ufo = {
                             x: dir === 1 ? -20 : WIDTH + 20,
-                            y: 52,
+                            y: 84, // Cleanly centered in red cellophane band (y = 64..127), below top HUD
                             dir: dir,
-                            speed: 1.75
+                            speed: 2.0 // Exact 1 arcade pixel per frame
                         };
-                        ufoSpawnTimer = 1100 + Math.floor(Math.random() * 400);
+                        ufoSpawnTimer = 1536; // Authentic ROM 0x0600 frame interval (~25.6s)
                     }
                 }
-            } else {
+            } else if (!player || !player.exploding) {
                 ufo.x += ufo.dir * ufo.speed;
-                if (frame % 10 === 0) playUfoWarble();
+                if (frame % 9 === 0) playUfoWarble();
                 if ((ufo.dir === 1 && ufo.x > WIDTH + 28) || (ufo.dir === -1 && ufo.x < -28)) {
                     ufo = null;
                 }
             }
 
-            // Player bullets update & collisions
+            // Player bullets update & swept collisions (4 arcade px/frame = 8 screen px/frame)
             for (let i = bullets.length - 1; i >= 0; i--) {
                 const b = bullets[i];
-                b.y -= 7.5;
+                const prevY = b.y;
+                b.y -= 8;
+                const segTop = b.y - 4;
+                const segBottom = prevY + 4;
 
-                // 1. Check collision with destructible bunkers/shields
+                // 1. Swept collision with destructible bunkers/shields
                 let consumed = false;
                 for (let bi = 0; bi < bunkers.length; bi++) {
-                    if (bunkers[bi].checkHit(b.x, b.y, 2)) {
-                        bunkers[bi].erode(b.x, b.y, 3.0);
+                    const hit = bunkers[bi].checkSegmentHit(b.x, prevY, b.y, 1);
+                    if (hit) {
+                        bunkers[bi].erode(hit.x, hit.y, 3.0);
+                        createExplosion(hit.x, hit.y, 6, 'shot');
                         bullets.splice(i, 1);
+                        if (player) player.shotLockTimer = 10;
                         consumed = true;
                         break;
                     }
                 }
                 if (consumed) continue;
 
-                // 2. Check bullet-vs-bullet collision with incoming alien missiles
+                // 2. Swept bullet-vs-bullet collision with incoming alien missiles
                 for (let ebi = enemyBullets.length - 1; ebi >= 0; ebi--) {
                     const eb = enemyBullets[ebi];
-                    if (Math.abs(b.x - eb.x) < 6 && Math.abs(b.y - eb.y) < 10) {
-                        createExplosion(b.x, b.y, 8, 'shot');
+                    if (Math.abs(b.x - eb.x) < 6 && segTop <= eb.y + 7 && segBottom >= eb.y - 7) {
+                        createExplosion(b.x, eb.y, 8, 'shot');
                         bullets.splice(i, 1);
                         enemyBullets.splice(ebi, 1);
+                        if (player) player.shotLockTimer = 10;
                         consumed = true;
                         break;
                     }
                 }
                 if (consumed) continue;
 
-                // 3. Check collision with Mystery Ship (UFO)
-                if (ufo && Math.abs(b.x - ufo.x) < 18 && Math.abs(b.y - ufo.y) < 12) {
+                // 3. Swept collision with Mystery Ship (UFO) — checked before ceiling so high UFO hits register cleanly
+                if (ufo && Math.abs(b.x - ufo.x) <= 17 && segTop <= ufo.y + 8 && segBottom >= ufo.y - 8) {
                     const ufoPts = UFO_SCORE_TABLE[(Math.max(1, shotCount) - 1) % UFO_SCORE_TABLE.length];
                     awardScore(ufoPts);
                     createExplosion(ufo.x, ufo.y, 20, 'ufo');
-                    scorePopups.push({ x: ufo.x, y: ufo.y + 4, text: ufoPts.toString(), color: PALETTE.R, timer: 55 });
+                    // Sequential reveal: red ufo_explosion shows for 22 frames, then red mystery score displays for 62 frames
+                    scorePopups.push({ x: ufo.x, y: ufo.y - 7, text: ufoPts.toString(), color: PALETTE.R, delay: 22, timer: 84 });
                     playUfoExplosionSound();
                     ufo = null;
                     bullets.splice(i, 1);
+                    if (player) player.shotLockTimer = 12;
                     continue;
                 }
 
-                // 4. Check collision with Invaders
+                // 4. Swept per-type AABB collision with Invaders
                 for (let ei = enemies.length - 1; ei >= 0; ei--) {
                     const e = enemies[ei];
-                    if (Math.hypot(b.x - e.x, b.y - e.y) < 16) {
+                    const halfW = e.halfW || ((e.type === 'squid' || e.type === 'boss') ? 9 : ((e.type === 'crab' || e.type === 'butterfly') ? 12 : 13));
+                    if (Math.abs(b.x - e.x) <= halfW && segTop <= e.y + 8 && segBottom >= e.y - 8) {
                         bullets.splice(i, 1);
                         consumed = true;
                         e.hp = (e.hp || 1) - 1;
@@ -1377,24 +1577,19 @@
                 }
                 if (consumed) continue;
 
-                // 5. Top ceiling splash (y <= 42)
-                if (b.y <= 42) {
-                    createExplosion(b.x, 44, 6, 'shot');
+                // 5. Top ceiling splash at top of red cellophane band (y <= 66, cleanly below white score HUD)
+                if (b.y <= 66) {
+                    createExplosion(b.x, 68, 6, 'shot');
                     bullets.splice(i, 1);
+                    if (player) player.shotLockTimer = 12;
                 }
             }
 
-            // Authentic 1978 Invader Fleet 1-Alien-Per-Frame Ripple March & 4-Note Bass Heartbeat
+            // Authentic 1978 Invader Fleet 1-Alien-Per-Frame Ripple March & Lockstep 4-Note Bass Heartbeat
             if (enemies.length > 0 && (!player || !player.exploding) && alienFreezeTimer <= 0) {
-                // 1. 4-Note LM556 Analog Bass Heartbeat Timer
                 fleetStepTimer++;
-                const stepDelay = getFleetStepDelay(enemies.length);
-                if (fleetStepTimer >= stepDelay) {
-                    fleetStepTimer = 0;
-                    playMarchStepSound();
-                }
 
-                // 2. 1-Alien-Per-Frame Intel 8080 Ripple Step (bottom-to-top, left-to-right)
+                // 1-Alien-Per-Frame Intel 8080 Ripple Step (bottom-to-top, left-to-right)
                 if (rippleCursor >= enemies.length) {
                     rippleCursor = 0;
                     fleetAnimFrame = (fleetAnimFrame + 1) % 2;
@@ -1406,6 +1601,18 @@
                         fleetDropPass = true;
                         edgeHitDuringPass = false;
                     }
+                }
+
+                // Sync the 4-note analog bass directly to the start of each full rack step (55 -> 5 frames);
+                // when <= 4 invaders remain (sweeping faster than 5 frames), cap smoothly at the authentic 5-frame ROM floor!
+                if (enemies.length >= 5) {
+                    if (rippleCursor === 0) {
+                        fleetStepTimer = 0;
+                        playMarchStepSound();
+                    }
+                } else if (fleetStepTimer >= 5) {
+                    fleetStepTimer = 0;
+                    playMarchStepSound();
                 }
 
                 const steppingEnemy = enemies[rippleCursor];
@@ -1420,15 +1627,16 @@
                     }
                     steppingEnemy.animFrame = ((steppingEnemy.animFrame || 0) + 1) % 2;
 
-                    if ((fleetDir > 0 && steppingEnemy.x >= WIDTH - 22) ||
-                        (fleetDir < 0 && steppingEnemy.x <= 22)) {
+                    if ((fleetDir > 0 && steppingEnemy.x >= WIDTH - 24) ||
+                        (fleetDir < 0 && steppingEnemy.x <= 24)) {
                         edgeHitDuringPass = true;
                     }
 
                     // Invaders physically slice/erode any shield pixels they march through
                     if (steppingEnemy.y >= 368) {
+                        const ew = steppingEnemy.halfW || 12;
                         for (let bi = 0; bi < bunkers.length; bi++) {
-                            bunkers[bi].erodeBox(steppingEnemy.x - 12, steppingEnemy.y - 8, steppingEnemy.x + 12, steppingEnemy.y + 8);
+                            bunkers[bi].erodeBox(steppingEnemy.x - ew, steppingEnemy.y - 8, steppingEnemy.x + ew, steppingEnemy.y + 8);
                         }
                     }
 
@@ -1448,47 +1656,48 @@
                 }
             }
 
-            // Check enemy direct collision with player or reaching player bottom line (Invasion!)
+            // Check invaders reaching player defense line (immediate Invasion Game Over!)
             for (let ei = enemies.length - 1; ei >= 0; ei--) {
                 const e = enemies[ei];
                 e.update();
                 if (gameActive && player && !player.exploding) {
-                    // If invaders reach the laser base vertical level, they overrun Earth!
-                    if (e.y >= player.y - 6) {
+                    if (e.y >= player.y - 12) {
                         handlePlayerHit(true);
                         break;
                     }
-                    if (player.invulnerable <= 0 && Math.hypot(e.x - player.x, e.y - player.y) < 18) {
-                        createExplosion(e.x, e.y, 16, 'alien');
-                        enemies.splice(ei, 1);
-                        handlePlayerHit(false);
-                        break;
-                    }
                 }
             }
 
-            // Alien missile firing cadence
+            // Authentic 1978 Score-Based Reload Rate Alien Missile Firing (up to 3 simultaneous shots from Wave 1!)
             if (gameActive && enemies.length > 0 && (!player || !player.exploding)) {
-                alienShotCooldown--;
-                const maxEnemyBullets = Math.min(3, 1 + Math.floor((55 - enemies.length) / 18) + Math.floor((level - 1) / 2));
-                if (alienShotCooldown <= 0 && enemyBullets.length < maxEnemyBullets) {
+                const reloadRate = getAlienReloadRate(score);
+                const allShotsClearedReload = enemyBullets.every(eb => (eb.steps || 0) >= reloadRate);
+                if (alienShotCooldown > 0) alienShotCooldown--;
+                if (enemyBullets.length < 3 && allShotsClearedReload && alienShotCooldown <= 0) {
                     spawnAlienMissile();
-                    alienShotCooldown = Math.max(14, 38 - level * 3 - Math.floor((55 - enemies.length) * 0.35));
+                    alienShotCooldown = 6;
                 }
             }
 
-            // Enemy bullets update, bunker erosion, ground splash & player collision
-            const shotSpeed = enemies.length <= 8 ? 4.2 : 3.2; // Alien shots speed up when <= 8 aliens remain (authentic ROM rule)
+            // Enemy bullets: authentic 3-frame round-robin ticks (4 arcade px/tick normally, 5 when <= 8 aliens remain)
+            const stepPx = enemies.length <= 8 ? 10 : 8;
             for (let bi = enemyBullets.length - 1; bi >= 0; bi--) {
                 const eb = enemyBullets[bi];
-                eb.y += shotSpeed;
+                const slot = eb.slot !== undefined ? eb.slot : (eb.type === 'plunger' ? 1 : (eb.type === 'squiggly' ? 2 : 0));
+                const prevY = eb.y;
+                if (frame % 3 === slot) {
+                    eb.y += stepPx;
+                    eb.steps = (eb.steps || 0) + 1;
+                    eb.animFrame = ((eb.animFrame || 0) + 1) % 4;
+                }
 
-                // Check bunker hit from above
+                // Swept bunker hit from above
                 let hitBunker = false;
                 for (let bki = 0; bki < bunkers.length; bki++) {
-                    if (bunkers[bki].checkHit(eb.x, eb.y, 2)) {
-                        bunkers[bki].erode(eb.x, eb.y + 2, 3.2);
-                        createExplosion(eb.x, eb.y, 5, 'shot');
+                    const hit = bunkers[bki].checkSegmentHit(eb.x, prevY, eb.y + 4, 2);
+                    if (hit) {
+                        bunkers[bki].erode(hit.x, hit.y + 2, 3.2);
+                        createExplosion(hit.x, hit.y, 5, 'shot');
                         enemyBullets.splice(bi, 1);
                         hitBunker = true;
                         break;
@@ -1496,30 +1705,26 @@
                 }
                 if (hitBunker) continue;
 
-                // Check bottom green ground line splash (y >= 474)
+                // Bottom green ground line splash & authentic pixel erosion (y >= 474)
                 if (eb.y >= 474) {
-                    createExplosion(eb.x, 472, 5, 'shot');
+                    erodeGroundLine(eb.x);
+                    createExplosion(eb.x, 470, 5, 'shot');
                     enemyBullets.splice(bi, 1);
                     continue;
                 }
 
-                // Check player hit
+                // Swept player hit check (runs every frame so active or injected missiles hit cleanly)
                 if (gameActive && player && !player.exploding && player.invulnerable <= 0) {
-                    if (Math.hypot(eb.x - player.x, eb.y - player.y) < 15) {
+                    const ebTop = Math.min(prevY, eb.y) - 6;
+                    const ebBot = Math.max(prevY, eb.y) + 6;
+                    if (Math.abs(eb.x - player.x) <= 13 && ebBot >= player.y - 8 && ebTop <= player.y + 8) {
                         enemyBullets.splice(bi, 1);
                         handlePlayerHit(false);
                     }
                 }
             }
 
-            // Particles, sprite explosions & score popups update
-            for (let pi = particles.length - 1; pi >= 0; pi--) {
-                const p = particles[pi];
-                p.x += p.vx;
-                p.y += p.vy;
-                p.life -= p.decay;
-                if (p.life <= 0) particles.splice(pi, 1);
-            }
+            // Sprite explosions & score popups update
             for (let si = spriteExplosions.length - 1; si >= 0; si--) {
                 spriteExplosions[si].timer++;
                 if (spriteExplosions[si].timer >= spriteExplosions[si].maxTimer) {
@@ -1527,32 +1732,39 @@
                 }
             }
             for (let spi = scorePopups.length - 1; spi >= 0; spi--) {
+                if (scorePopups[spi].delay > 0) scorePopups[spi].delay--;
                 scorePopups[spi].timer--;
                 if (scorePopups[spi].timer <= 0) scorePopups.splice(spi, 1);
             }
 
-            // Wave cleared -> advance to next wave & restore shields
-            if (enemies.length === 0) {
-                level++;
+            // Wave cleared -> brief authentic transition pause, then next wave & restored shields/ground line
+            if (enemies.length === 0 && waveClearTimer <= 0) {
                 bullets = [];
                 enemyBullets = [];
-                initBunkers();
-                spawnWave();
-                playExtraLifeFanfare();
+                ufo = null;
+                waveClearTimer = 45;
             }
 
             const scoreEl = document.getElementById('score-display');
-            if (scoreEl) scoreEl.innerText = score.toString().padStart(4, '0');
+            if (scoreEl) scoreEl.innerText = (score % 10000).toString().padStart(4, '0');
             if (score > highScore) {
                 highScore = score;
                 const hiEl = document.getElementById('high-score');
-                if (hiEl) hiEl.innerText = highScore.toString().padStart(4, '0');
+                if (hiEl) hiEl.innerText = (highScore % 10000).toString().padStart(4, '0');
             }
         }
 
         function draw() {
             ctx.fillStyle = '#000';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+            // Authentic 1978 Top HUD rendered in crisp 7x10 arcade bitmap font (white band, y = 0..63)
+            drawArcadeText('SCORE<1>', 30, 14, PALETTE.W, 1, 'left');
+            drawArcadeText('HI-SCORE', WIDTH / 2, 14, PALETTE.W, 1, 'center');
+            drawArcadeText('SCORE<2>', WIDTH - 30, 14, PALETTE.W, 1, 'right');
+
+            drawArcadeText((score % 10000).toString().padStart(4, '0'), 68, 32, PALETTE.W, 1, 'center');
+            drawArcadeText((highScore % 10000).toString().padStart(4, '0'), WIDTH / 2, 32, PALETTE.W, 1, 'center');
 
             if (gameActive || player) {
                 // Destructible green shields/bunkers
@@ -1566,20 +1778,20 @@
                 // Player Laser Base
                 if (player) player.draw();
 
-                // Invaders (automatically colored by CRT cellophane band!)
+                // Invaders (automatically colored scanline-by-scanline by CRT cellophane band!)
                 enemies.forEach(e => e.draw());
 
-                // Player laser shot (1x8 arcade pixels -> 2x12 screen pixels)
+                // Player laser shot (exact 1x4 arcade pixels -> 2x8 screen pixels)
                 bullets.forEach(b => {
                     ctx.fillStyle = getCellophaneColor(b.y);
-                    ctx.fillRect(b.x - 1, b.y - 6, 2, 12);
+                    ctx.fillRect(Math.round(b.x - 1), Math.round(b.y - 4), 2, 8);
                 });
 
                 // 3 Distinct Animated Alien Missile Types (Rolling, Plunger, Squiggly)
-                const shotAnimIdx = Math.floor(frame / 4) % 4;
                 enemyBullets.forEach(eb => {
                     const key = eb.type === 'plunger' ? 'shot_plunger' : (eb.type === 'squiggly' ? 'shot_squiggly' : 'shot_rolling');
-                    drawSprite(SPRITES[key][shotAnimIdx], eb.x, eb.y);
+                    const animIdx = (eb.animFrame !== undefined ? eb.animFrame : Math.floor(frame / 4)) % 4;
+                    drawSprite(SPRITES[key][animIdx], eb.x, eb.y);
                 });
 
                 // Authentic pixel-art explosion sprites
@@ -1593,51 +1805,37 @@
                     }
                 });
 
-                // Particles
-                particles.forEach(p => {
-                    ctx.fillStyle = p.color;
-                    ctx.globalAlpha = Math.max(0, p.life);
-                    ctx.fillRect(p.x - 1, p.y - 1, p.size, p.size);
-                });
-                ctx.globalAlpha = 1.0;
-
-                // Bottom green ground baseline (authentic 1978 scanline y=239 -> 478)
+                // Destructible bottom green ground baseline (authentic 1978 scanline y = 238 -> 476, chipped by alien shots!)
                 ctx.fillStyle = PALETTE.G;
-                ctx.fillRect(16, 476, WIDTH - 32, 2);
-
-                // Reserve Laser Bases HUD (bottom-left)
-                for (let i = 0; i < Math.max(0, lives - 1); i++) {
-                    drawSprite(SPRITES.player, 68 + i * 34, 494, PALETTE.G, 1.8);
+                if (!groundLine || groundLine.length === 0) initGroundLine();
+                for (let gx = 0; gx < groundLine.length; gx++) {
+                    if (groundLine[gx]) {
+                        ctx.fillRect(gx * SCALE, 476, SCALE, SCALE);
+                    }
                 }
 
-                // Floating score popups (50 / 100 / 150 / 300 UFO Mystery Score) & stage banners
-                if (ctx.fillText) {
-                    ctx.font = 'bold 15px "Courier New", monospace';
-                    ctx.textAlign = 'center';
-                    scorePopups.forEach(sp => {
-                        ctx.fillStyle = sp.color;
-                        ctx.fillText(sp.text, sp.x, sp.y);
-                    });
+                // Bottom-left lives digit (WHITE) & Reserve Laser Bases (GREEN, matching Midway cellophane map!)
+                drawArcadeText(Math.max(0, lives).toString(), 22, 490, PALETTE.W, 1, 'left');
+                for (let i = 0; i < Math.min(5, Math.max(0, lives - 1)); i++) {
+                    drawSprite(SPRITES.player, 68 + i * 32, 495, PALETTE.G, 2);
+                }
 
-                    // Bottom-left lives count number & bottom-right CREDIT / WAVE
-                    ctx.font = 'bold 16px "Courier New", monospace';
-                    ctx.fillStyle = PALETTE.W;
-                    ctx.textAlign = 'left';
-                    ctx.fillText(Math.max(0, lives).toString(), 24, 500);
-                    ctx.textAlign = 'right';
-                    ctx.fillText(`WAVE ${level.toString().padStart(2, '0')}  CREDIT 01`, WIDTH - 20, 500);
+                // Bottom-right CREDIT 00 (WHITE, authentic 1978 layout)
+                drawArcadeText('CREDIT 00', WIDTH - 22, 490, PALETTE.W, 1, 'right');
 
-                    ctx.textAlign = 'center';
-                    if (stageBannerTimer > 0) {
-                        ctx.font = 'bold 20px "Courier New", monospace';
-                        ctx.fillStyle = PALETTE.G;
-                        ctx.fillText(`WAVE ${level}`, WIDTH / 2, HEIGHT / 2 + 24);
+                // Floating mystery score popups (appear cleanly after ufo_explosion finishes)
+                scorePopups.forEach(sp => {
+                    if ((sp.delay || 0) <= 0) {
+                        drawArcadeText(sp.text, sp.x, sp.y + 2, sp.color, 1, 'center');
                     }
-                    if (statusBannerTimer > 0) {
-                        ctx.font = 'bold 18px "Courier New", monospace';
-                        ctx.fillStyle = statusBannerColor;
-                        ctx.fillText(statusBannerText, WIDTH / 2, HEIGHT / 2 - 12);
-                    }
+                });
+
+                // Classic Wave 1 player start prompt & brief status banners (e.g. EXTRA BASE / GAME OVER)
+                if (stageBannerTimer > 0 && Math.floor(frame / 6) % 2 === 0) {
+                    drawArcadeText('PLAY PLAYER<1>', WIDTH / 2, 102, PALETTE.R, 1, 'center');
+                }
+                if (statusBannerTimer > 0) {
+                    drawArcadeText(statusBannerText, WIDTH / 2, 102, statusBannerColor, 1, 'center');
                 }
             }
         }
@@ -1981,6 +2179,20 @@
             dpadGroup.ontouchcancel = handleDpadTouch;
         }
 
+        function renderScoreTableIcons() {
+            if (typeof document === 'undefined' || !document.querySelectorAll) return;
+            const icons = document.querySelectorAll('.score-icon');
+            icons.forEach(c => {
+                const ic = c.getContext && c.getContext('2d');
+                if (!ic) return;
+                ic.clearRect(0, 0, c.width, c.height);
+                const key = c.getAttribute('data-sprite');
+                const color = c.getAttribute('data-color') || PALETTE.W;
+                const spr = key === 'ufo' ? SPRITES.ufo : (SPRITES[key] && SPRITES[key][0]);
+                if (spr) drawSprite(spr, c.width / 2, c.height / 2, color, 2, ic);
+            });
+        }
+
         function startGame() {
             ensureAudio();
             score = 0;
@@ -1988,6 +2200,7 @@
             lives = 3;
             bonusLifeAwarded = false;
             shotCount = 0;
+            waveClearTimer = 0;
             bullets = [];
             enemyBullets = [];
             particles = [];
@@ -2060,6 +2273,7 @@
             canvas.width = WIDTH;
             canvas.height = HEIGHT;
             syncFlipButtonUI();
+            renderScoreTableIcons();
             initBunkers();
             loop();
             if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
